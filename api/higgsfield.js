@@ -40,11 +40,11 @@ module.exports = async (req, res) => {
       pollInterval: 2500,
     });
 
-    const jobSet = await client.subscribe('flux-pro/kontext/max/text-to-image', {
+    const jobSet = await client.subscribe('higgsfield-ai/soul/standard', {
       input: {
         prompt: prompt + ', professional commercial photography, high quality, clean, well lit',
         aspect_ratio,
-        safety_tolerance: 2,
+        resolution: '720p',
       },
       withPolling: true,
     });
