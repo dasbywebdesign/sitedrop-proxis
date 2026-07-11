@@ -36,7 +36,7 @@ module.exports = async (req, res) => {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        prompt: prompt + ', professional commercial photography, high quality, clean, well lit',
+        prompt: prompt + ', photorealistic, high quality, photograph,n atural lighting, beautiful',
         aspect_ratio,
         resolution: '720p',
       }),
