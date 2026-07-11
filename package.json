@@ -1,0 +1,8 @@
+{
+  "name": "sitedrop-proxies",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@higgsfield/client": "latest"
+  }
+}
