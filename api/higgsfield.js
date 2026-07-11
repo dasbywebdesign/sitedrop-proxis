@@ -36,7 +36,7 @@ module.exports = async (req, res) => {
     const { createHiggsfieldClient } = await import('@higgsfield/client/v2');
     const client = createHiggsfieldClient({
       credentials: process.env.HF_CREDENTIALS, // "KEY_ID:KEY_SECRET"
-      maxPollTime: 120000,
+      maxPollTime: 55000,
       pollInterval: 2500,
     });
 
