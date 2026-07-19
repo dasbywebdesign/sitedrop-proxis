@@ -59,7 +59,7 @@ module.exports = async (req, res) => {
   }
   const low = html.toLowerCase();
   const findings = [];
-  let score = 0, total = 100;
+  let score = 0, total = 105;
   const check = (pts, ok, issue, fix) => { if (ok) score += pts; else findings.push({ points_lost: pts, issue, fix }); };
 
   // security (30) — skipped for unpublished drafts (no server yet)
@@ -103,6 +103,10 @@ module.exports = async (req, res) => {
   if (hasForm) {
     check(5, /(honeypot|website["'][^>]*(hidden|tabindex=["']-1))/.test(low), 'Form has no visible spam protection', 'Add a honeypot field + validation');
   } else total -= 5;
+
+  // privacy (5) — mandated by the XENON site-audit; matters once a site collects any visitor info
+  check(5, /privacy[\s-]*policy/i.test(html) || /href=["'][^"']*privac/i.test(html),
+    'No privacy policy', 'Add a privacy policy page (legally expected once a site collects visitor info via forms/analytics)');
 
   // media health (10)
   if (draft) { total -= 6; } else {
