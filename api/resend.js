@@ -23,8 +23,10 @@ module.exports = async (req, res) => {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-    const to = String(body.to || '').trim();
-    if (!to) return res.status(400).json({ ok: false, error: 'missing "to"' });
+    const norm = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map((x) => String(x).trim()).filter(Boolean);
+    const to = norm(body.to);
+    if (!to.length) return res.status(400).json({ ok: false, error: 'missing "to"' });
+    const bcc = norm(body.bcc);
 
     // Optional attachments (e.g. the invoice PDF): [{ filename, content: <base64> }]
     const attachments = Array.isArray(body.attachments)
@@ -38,12 +40,13 @@ module.exports = async (req, res) => {
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: process.env.RESEND_FROM || 'onboarding@resend.dev',
-        to: [to],
+        to,
         subject: body.subject || 'Invoice',
         text: body.text || '',
         html: body.html || undefined,
         // reply_to lets the client reply straight to you
         reply_to: body.reply_to || body.from || process.env.RESEND_REPLY_TO || undefined,
+        bcc: bcc.length ? bcc : undefined,
         attachments,
       }),
     });
