@@ -92,7 +92,7 @@ module.exports = async (req, res) => {
   const h1s = (html.match(/<h1[\s>]/gi) || []).length;
   check(4, h1s === 1, `H1 count is ${h1s} (should be exactly 1)`, 'One H1 per page');
   const imgs = html.match(/<img\b[^>]*>/gi) || [];
-  const noalt = imgs.filter(i => !/alt=["'][^"']+["']/i.test(i)).length;
+  const noalt = imgs.filter(i => !/alt=/i.test(i)).length; // empty alt="" is valid (decorative)
   check(5, imgs.length === 0 || noalt === 0, `${noalt}/${imgs.length} images missing alt text`, 'Alt text on every meaningful image');
   check(3, /(skip[^"<>]{0,20}(content|nav)|#main|#content)/.test(low), 'No skip link', 'Add a skip-to-content link');
   check(2, !low.includes('autoplay'), 'Autoplay media present', 'Make media click-to-play');
