@@ -8,6 +8,9 @@
     },
     "api/publish.js": {
       "maxDuration": 60
+    },
+    "api/leads.js": {
+      "maxDuration": 60
     }
   }
 }
