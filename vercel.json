@@ -1,5 +1,10 @@
 {
-  "functions":{
-    "api/higgsfield.js":{"maxDuration": 60}
+  "functions": {
+    "api/higgsfield.js": {
+      "maxDuration": 60
+    },
+    "api/rater.js": {
+      "maxDuration": 60
+    }
   }
 }
