@@ -41,6 +41,7 @@ module.exports = async (req, res) => {
         to: [to],
         subject: body.subject || 'Invoice',
         text: body.text || '',
+        html: body.html || undefined,
         // reply_to lets the client reply straight to you
         reply_to: body.reply_to || body.from || process.env.RESEND_REPLY_TO || undefined,
         attachments,
