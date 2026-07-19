@@ -37,25 +37,33 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+  const draft = typeof body.html === 'string' && body.html.length > 0;
   let url = (body.url || '').trim();
-  if (!url) return res.status(400).json({ error: 'url required' });
-  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  if (!draft && !url) return res.status(400).json({ error: 'url or html required' });
+  if (!draft && !/^https?:\/\//i.test(url)) url = 'https://' + url;
 
-  let r, html;
-  try {
-    r = await fetch(url, { headers: UA, redirect: 'follow', signal: AbortSignal.timeout(15000) });
-    html = (await r.text()).slice(0, 1_500_000);
-  } catch (e) {
-    return res.status(200).json({ url, error: 'unreachable: ' + (e && e.message) });
+  let r = null, html, final, h;
+  if (draft) {
+    html = body.html.slice(0, 1_500_000);
+    final = '(unpublished draft)';
+    h = { has: () => false, get: () => '' };
+  } else {
+    try {
+      r = await fetch(url, { headers: UA, redirect: 'follow', signal: AbortSignal.timeout(15000) });
+      html = (await r.text()).slice(0, 1_500_000);
+    } catch (e) {
+      return res.status(200).json({ url, error: 'unreachable: ' + (e && e.message) });
+    }
+    final = r.url || url;
+    h = r.headers;
   }
-  const final = r.url || url;
-  const h = r.headers;
   const low = html.toLowerCase();
   const findings = [];
   let score = 0, total = 100;
   const check = (pts, ok, issue, fix) => { if (ok) score += pts; else findings.push({ points_lost: pts, issue, fix }); };
 
-  // security (30)
+  // security (30) — skipped for unpublished drafts (no server yet)
+  if (draft) { total -= 30; } else {
   check(6, final.startsWith('https'), 'Not served over HTTPS', 'Enable TLS + redirect HTTP to HTTPS');
   check(5, h.has('strict-transport-security'), 'Missing HSTS header', 'Add Strict-Transport-Security');
   check(7, h.has('content-security-policy'), 'No Content-Security-Policy', 'Add a CSP header');
@@ -64,6 +72,7 @@ module.exports = async (req, res) => {
     'No clickjacking protection', 'Add frame-ancestors or X-Frame-Options');
   check(2, h.has('referrer-policy'), 'Missing Referrer-Policy', 'Add strict-origin-when-cross-origin');
   check(2, h.has('permissions-policy'), 'Missing Permissions-Policy', 'Deny camera/mic/geo by default');
+  }
 
   // SEO (25)
   const title = (html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1] || '';
@@ -72,8 +81,10 @@ module.exports = async (req, res) => {
   check(4, /property=["']og:title["']/i.test(html), 'No Open Graph tags', 'Add og:title/description/image');
   check(4, low.includes('application/ld+json'), 'No structured data (JSON-LD)', 'Add LocalBusiness schema');
   check(2, /rel=["'][^"']*icon/i.test(html), 'No favicon', 'Add a favicon');
+  if (draft) { total -= 6; } else {
   check(3, (await head(new URL('/robots.txt', final).href)) === 200, 'No robots.txt', 'Add robots.txt');
   check(3, (await head(new URL('/sitemap.xml', final).href)) === 200, 'No sitemap.xml', 'Add a sitemap');
+  }
 
   // accessibility (20)
   check(3, /<html[^>]+lang=/i.test(html), 'No lang attribute', 'Set <html lang>');
@@ -94,10 +105,12 @@ module.exports = async (req, res) => {
   } else total -= 5;
 
   // media health (10)
+  if (draft) { total -= 6; } else {
   const srcs = [...html.matchAll(/<img\b[^>]*?src=["']([^"']+)/gi)].map(m => m[1]).filter(s => !s.startsWith('data:')).slice(0, 5);
   let broken = 0;
   for (const s of srcs) { try { if ((await head(new URL(s, final).href)) >= 400) broken++; } catch { broken++; } }
   check(6, srcs.length === 0 || broken === 0, `${broken}/${srcs.length} sampled images are BROKEN (404)`, 'Fix image hosting — a shop window with no pictures');
+  }
   check(4, !html.includes('â€') && !html.includes('Ã©'), 'Text encoding is broken (mojibake visible)', 'Serve UTF-8 with <meta charset>');
 
   // weight (5)
@@ -110,7 +123,7 @@ module.exports = async (req, res) => {
     : 'QUALIFIED PROSPECT — significant issues (<=70)';
 
   return res.status(200).json({
-    url: final, mechanical_score: pct, band, prospect: pct <= 70,
+    url: final, draft, mechanical_score: pct, band, prospect: pct <= 70,
     findings: findings.sort((a, b) => b.points_lost - a.points_lost),
     note: 'Mechanical checks only. A full XENON Studio review adds strategy, brand, design, and content judgment — this score is the floor, not the whole audit.'
   });
