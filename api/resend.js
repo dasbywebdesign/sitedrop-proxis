@@ -42,7 +42,7 @@ module.exports = async (req, res) => {
         subject: body.subject || 'Invoice',
         text: body.text || '',
         // reply_to lets the client reply straight to you
-        reply_to: body.from || undefined,
+        reply_to: body.reply_to || body.from || process.env.RESEND_REPLY_TO || undefined,
         attachments,
       }),
     });
