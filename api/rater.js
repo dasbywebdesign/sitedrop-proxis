@@ -58,8 +58,9 @@ module.exports = async (req, res) => {
     h = r.headers;
   }
   const low = html.toLowerCase();
+  const NOW = new Date().getFullYear();
   const findings = [];
-  let score = 0, total = 105;
+  let score = 0, total = 112;
   const check = (pts, ok, issue, fix) => { if (ok) score += pts; else findings.push({ points_lost: pts, issue, fix }); };
 
   // security (30) — skipped for unpublished drafts (no server yet)
@@ -108,12 +109,21 @@ module.exports = async (req, res) => {
   check(5, /privacy[\s-]*policy/i.test(html) || /href=["'][^"']*privac/i.test(html),
     'No privacy policy', 'Add a privacy policy page (legally expected once a site collects visitor info via forms/analytics)');
 
+  // freshness / staleness (7) — a neglected-looking site quietly loses customers' trust
+  const cpy = (html.match(/(?:\u00a9|&copy;|copyright)\s*(?:&\w+;\s*)?((?:19|20)\d{2})/i) || [])[1];
+  check(4, !cpy || Number(cpy) >= NOW - 1,
+    `Copyright still says ${cpy} — the site looks out of date/abandoned to visitors`,
+    'Update the footer year (and keep it auto-updating)');
+  check(3, !/(coming soon|under construction|lorem ipsum|placeholder text|your text here|example\.com)/i.test(low),
+    'Placeholder text, "coming soon", or filler still live on the site',
+    'Replace leftover placeholder/coming-soon content with real copy');
+
   // media health (10)
   if (draft) { total -= 6; } else {
   const srcs = [...html.matchAll(/<img\b[^>]*?src=["']([^"']+)/gi)].map(m => m[1]).filter(s => !s.startsWith('data:')).slice(0, 5);
   let broken = 0;
   for (const s of srcs) { try { if ((await head(new URL(s, final).href)) >= 400) broken++; } catch { broken++; } }
-  check(6, srcs.length === 0 || broken === 0, `${broken}/${srcs.length} sampled images are BROKEN (404)`, 'Fix image hosting — a shop window with no pictures');
+  check(6, srcs.length === 0 || broken === 0, `${broken}/${srcs.length} sampled images are broken/missing (removed or discontinued photos)`, 'Fix image hosting — a shop window with no pictures');
   }
   check(4, !html.includes('â€') && !html.includes('Ã©'), 'Text encoding is broken (mojibake visible)', 'Serve UTF-8 with <meta charset>');
 
