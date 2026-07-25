@@ -85,8 +85,8 @@ module.exports = async (req, res) => {
         '7. Testimonials: 2-3 real-sounding reviews with names; if a rating is given, show it prominently.',
         '8. FAQ: 3-5 question/answer pairs relevant to the business.',
         '9. Contact: prominent phone (tel:), address, and hours, PLUS a WORKING <form> with labeled Name, Email, and Message fields,',
-        '   a hidden honeypot field, and a submit button. Wire submit to mailto: the business email if one is given (or a clear placeholder),',
-        '   via onsubmit that builds the mailto and preventDefault. The form MUST be present.',
+        '   a hidden honeypot field, and a submit button. onsubmit MUST preventDefault, then show a polished TOAST confirmation and reset the form.',
+        '   The toast is a small fixed-position, auto-dismissing (after ~4s), accessible (role="status", aria-live="polite") notification reading "Message sent ✓ — we\'ll reply within one business day", styled to match the site palette with a success check icon. Include a tiny self-contained toast() helper + styles. Optionally also open the mailto to the business email if one is given. The form + toast MUST be present.',
         '10. Footer: business name, one-line description, grouped nav links, contact block, and a © line with the current year.',
         '',
         'QUALITY BAR: this must look like a $3,000+ custom site — not a template. Vary section backgrounds, use real imagery, generous spacing,',
@@ -102,7 +102,7 @@ module.exports = async (req, res) => {
         '  • home — hero (per HERO spec), trust bar, a 3–4 item services preview with a "View all services" link (data-nav="services"), a testimonials teaser, and a bold CTA band.',
         '  • services — a page header, the FULL services grid (every service, icon + specific benefit), the "How it works" 01–04 process, and a short FAQ.',
         '  • about — a page header, the story/credibility two-column, credential/trust badges, and a values or "why choose us" grid.',
-        '  • contact — a page header, prominent phone (tel:), address and hours, AND the WORKING contact <form> (labeled Name/Email/Message + hidden honeypot, submit builds a mailto with preventDefault), plus a service-area note.',
+        '  • contact — a page header, prominent phone (tel:), address and hours, AND the WORKING contact <form> (labeled Name/Email/Message + hidden honeypot; submit preventDefaults, shows the polished accessible "Message sent ✓" toast and resets the form), plus a service-area note.',
         'Keep markup efficient (favor Tailwind utility classes over long custom CSS) so the ENTIRE multi-page document is returned complete and never truncated. Always close </html>.',
       ].join('\n');
       const sysFinal = body.multipage ? (sysFP + '\n\n' + MULTIPAGE) : sysFP;
