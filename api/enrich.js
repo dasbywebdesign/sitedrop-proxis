@@ -13,7 +13,12 @@
 const UA = { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36', Accept: 'text/html' };
 const JUNK = /\.(png|jpe?g|gif|webp|svg|ico|css|js)$|@(2x|3x|sentry|example|wixpress|sentry-next|godaddy)/i;
 const ROLE = /^(info|contact|hello|hi|sales|office|admin|support|team|booking|appointments|service)@/i;
-const DIRECTORY = /(^|\.)(yelp|facebook|instagram|twitter|x|tiktok|linkedin|youtube|yellowpages|mapquest|bbb|indeed|glassdoor|tripadvisor|nextdoor|angi|thumbtack|houzz|healthgrades|zocdoc|vitals|opencare|birdeye|manta|chamberofcommerce|dnb|bizapedia|loopnet|zillow|realtor|apartments|google|bing|duckduckgo|wikipedia|amazon|ebay|pinterest|reddit|foursquare|citysearch|superpages|dexknows|merchantcircle|expertise|threebestrated|mapcarta|cylex|hotfrog|brownbook|find-open|ezlocal|nicelocal|opendi)\./i;
+const DIRECTORY = /(^|\.)(yelp|facebook|instagram|twitter|x|tiktok|linkedin|youtube|yellowpages|mapquest|bbb|indeed|glassdoor|tripadvisor|nextdoor|angi|thumbtack|houzz|healthgrades|zocdoc|vitals|opencare|birdeye|manta|chamberofcommerce|dnb|bizapedia|loopnet|zillow|realtor|apartments|google|bing|duckduckgo|wikipedia|amazon|ebay|pinterest|reddit|foursquare|citysearch|superpages|dexknows|merchantcircle|expertise|threebestrated|mapcarta|cylex|hotfrog|brownbook|find-open|ezlocal|nicelocal|opendi|dentistoffices|doctor|wellness|ratemds|sharecare|webmd|whitepages|spokeo|yellowbook|trustpilot|sitejabber|insiderpages|kudzu|elocal|n49|2findlocal|americantowns|uscity|topratedlocal|patch|local|places|mapme|yellow|business|companies|listings?|directory|reviews?|allbiz|corporationwiki|buzzfile|zoominfo|apollo|crunchbase|indeed|ziprecruiter|carecredit|opendoor)\./i;
+function domainMatchesName(host, name) {
+  host = host.toLowerCase().replace(/^www\./, '').split('.')[0];
+  const words = String(name || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length >= 4 && !/^(and|the|inc|llc|shop|store|group|center|company|services?)$/.test(w));
+  return words.some((w) => host.includes(w));
+}
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', process.env.ALLOW_ORIGIN || '*');
@@ -111,8 +116,14 @@ module.exports = async (req, res) => {
       if (!query) return res.status(400).json({ error: 'query required' });
       const { results, provider } = await doSearch(query, Math.min(Number(b.limit) || 10, 20));
       if (b.mode === 'site') {
-        const cand = results.find((r) => r.url && !isDirectory(r.url));
-        return res.status(200).json({ provider, website: cand ? cand.url : '', results: results.slice(0, 6) });
+        const name = String(b.name || query);
+        const nonDir = results.filter((r) => r.url && !isDirectory(r.url));
+        // Prefer a domain whose name matches the business (allsmilesfresno.com for "All Smiles");
+        // fall back to the top non-directory result only if it ALSO name-matches — otherwise
+        // treat as "no official site found" rather than guessing a stranger's domain.
+        let cand = null;
+        for (const r of nonDir) { try { if (domainMatchesName(new URL(r.url).hostname, name)) { cand = r; break; } } catch (e) {} }
+        return res.status(200).json({ provider, website: cand ? cand.url : '', matched: !!cand, results: results.slice(0, 6) });
       }
       return res.status(200).json({ provider, results: results.slice(0, Math.min(Number(b.limit) || 10, 20)) });
     }
