@@ -52,6 +52,33 @@ async function openaiImageBuf(model, prompt, portrait, quality) {
   throw new Error('no image data in response');
 }
 
+// Flux Pro via fal.ai — returns image BYTES. Needs FAL_KEY. Throws on failure.
+async function falImageBuf(model, prompt, portrait) {
+  const key = process.env.FAL_KEY;
+  if (!key) throw new Error('FAL_KEY not set');
+  const path = model === 'flux-pro' ? 'flux-pro/v1.1'
+             : model === 'flux-pro-ultra' ? 'flux-pro/v1.1-ultra'
+             : model.replace(/^fal(-ai)?\//, '');
+  const r = await fetch('https://fal.run/fal-ai/' + path, {
+    method: 'POST',
+    headers: { Authorization: 'Key ' + key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: prompt + STYLE, image_size: portrait ? 'portrait_4_3' : 'landscape_4_3', num_images: 1, output_format: 'png', safety_tolerance: '5' }),
+    signal: AbortSignal.timeout(58000),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((j.detail && (Array.isArray(j.detail) ? (j.detail[0] && j.detail[0].msg) : j.detail)) || j.error || ('fal HTTP ' + r.status));
+  const url = j.images && j.images[0] && j.images[0].url;
+  if (!url) throw new Error('no fal image url');
+  const ir = await fetch(url, { signal: AbortSignal.timeout(25000) });
+  if (!ir.ok) throw new Error('fetch fal url ' + ir.status);
+  return Buffer.from(await ir.arrayBuffer());
+}
+
+// Route to the right provider by model name.
+function generateBuf(model, prompt, portrait, quality) {
+  return /flux/i.test(model) ? falImageBuf(model, prompt, portrait) : openaiImageBuf(model, prompt, portrait, quality);
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', process.env.ALLOW_ORIGIN || '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
@@ -65,21 +92,21 @@ module.exports = async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'prompt required' });
     const portrait = /3:4|9:16|portrait/i.test(String(body.aspect_ratio || '3:4'));
 
-    // No credentials → free pollinations image (still usable).
-    if (!(process.env.OPENAI_IMAGE_KEY || process.env.OPENAI_API_KEY) || !process.env.BLOB_READ_WRITE_TOKEN) {
-      return res.status(200).json({ url: pollinations(prompt, portrait), source: 'pollinations', note: 'image key / BLOB_READ_WRITE_TOKEN not set' });
+    // Need a Blob store to persist images; without it, free pollinations (still usable).
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      return res.status(200).json({ url: pollinations(prompt, portrait), source: 'pollinations', note: 'BLOB_READ_WRITE_TOKEN not set' });
     }
 
-    const primary = (body.model && String(body.model)) || process.env.OPENAI_IMAGE_MODEL || 'dall-e-3';
-    let buf, note = '';
+    const primary = (body.model && String(body.model)) || process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2';
+    let buf, note = '', source = /flux/i.test(primary) ? 'flux' : 'openai';
     try {
-      buf = await openaiImageBuf(primary, prompt, portrait, body.quality);
+      buf = await generateBuf(primary, prompt, portrait, body.quality);
     } catch (e1) {
       note = String((e1 && e1.message) || e1);
-      // If gpt-image-1 isn't available on this key (needs org verification), retry with dall-e-3.
-      if (/gpt-image/i.test(primary) && /verif|access|not.*(allow|exist)|403|model/i.test(note)) {
-        try { buf = await openaiImageBuf('dall-e-3', prompt, portrait, body.quality); note += ' | fell back to dall-e-3'; }
-        catch (e2) { note += ' | dall-e-3 also failed: ' + ((e2 && e2.message) || e2); }
+      // OpenAI image fallback: gpt-image-2 → gpt-image-1 if the newer id isn't on this key yet.
+      if (/gpt-image/i.test(primary) && primary !== 'gpt-image-1') {
+        try { buf = await openaiImageBuf('gpt-image-1', prompt, portrait, body.quality); note += ' | fell back to gpt-image-1'; }
+        catch (e2) { note += ' | gpt-image-1 also failed: ' + ((e2 && e2.message) || e2); }
       }
     }
     if (!buf) return res.status(200).json({ url: pollinations(prompt, portrait), source: 'pollinations', note });
@@ -87,7 +114,7 @@ module.exports = async (req, res) => {
     try {
       const name = 'sitedrop-img/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.png';
       const blob = await put(name, buf, { access: 'public', contentType: 'image/png', token: process.env.BLOB_READ_WRITE_TOKEN });
-      return res.status(200).json({ url: blob.url, source: 'openai' });
+      return res.status(200).json({ url: blob.url, source, note: note || undefined });
     } catch (eBlob) {
       return res.status(200).json({ url: pollinations(prompt, portrait), source: 'pollinations', note: 'blob upload failed: ' + ((eBlob && eBlob.message) || eBlob) });
     }
