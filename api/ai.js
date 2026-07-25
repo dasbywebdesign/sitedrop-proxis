@@ -83,10 +83,11 @@ module.exports = async (req, res) => {
         'FORM COPY (REQUIRED): any validation/error message must be specific, constructive, and human — NEVER "Invalid input" or a raw code. Use setCustomValidity or inline helper text, e.g. email invalid → "Please enter a valid email like name@example.com"; empty required field → "Please add your name so we can reply". Friendly, not robotic or blaming. Place the message right next to the field it refers to.',
         'RESPONSIVE (REQUIRED — non-negotiable): the site MUST look perfect on phone, tablet, AND desktop. Include <meta name="viewport" content="width=device-width, initial-scale=1">.',
         'Use responsive Tailwind prefixes (sm: md: lg:) on every multi-column layout — grids collapse to one column on mobile, font sizes scale down (use clamp() or responsive text classes), padding shrinks on small screens.',
+        'EVERY max-width content container MUST carry horizontal padding (e.g. px-5 sm:px-6) so text and buttons never touch the screen edge on a phone. The hero headline must scale on mobile (clamp or text-4xl sm:text-5xl lg:text-6xl), never a fixed huge size that overflows.',
         'The nav MUST have a working mobile hamburger menu (a button that toggles the links) that appears under md: and hides the desktop link row. No horizontal scrolling at any width. Tap targets >= 44px. Images use max-width:100% and never overflow.',
         '',
         'REQUIRED SECTIONS (include ALL, in this order — do not skip any):',
-        '1. Sticky header nav: logo/business name, anchor links, a tap-to-call phone (tel: link) if a phone is given, and a filled primary CTA.',
+        '1. Sticky header nav: a LOGO LOCKUP (a rounded-square monogram badge with the business initials in the brand primary, OR a small relevant inline-SVG mark, set NEXT TO the business name — never the bare name alone), anchor links, a tap-to-call phone (tel: link) if a phone is given, and a filled primary CTA. Echo a smaller lockup in the footer.',
         '2. Hero (per the HERO spec above) with the business name/tagline and two CTAs; the first CTA is Call (tel:) if a phone exists.',
         '3. Trust bar: 3-5 small badge/stat cards (e.g. license #, "Fully Insured", star rating if given, years, "24/7"). Use real given data only.',
         '4. Services: a grid of 3-6 cards, each with a Lucide icon, a real service name, and one specific benefit sentence.',
@@ -207,6 +208,37 @@ module.exports = async (req, res) => {
           html = html.replace(/<\/head>/i, link + css + '</head>');
         }
       }
+
+      // 6) Brand primary (from the model's Tailwind config) drives the logo mark + texture below.
+      const pm = html.match(/primary\s*:\s*['"](#[0-9a-fA-F]{3,8})['"]/);
+      const primary = pm ? pm[1] : '#1a1a1a';
+      const hexA = (h, a) => { const m = /^#?([0-9a-f]{6})$/i.exec(h) || /^#?([0-9a-f]{3})$/i.exec(h); if (!m) return 'rgba(0,0,0,' + a + ')'; let s = m[1]; if (s.length === 3) s = s.split('').map((c) => c + c).join(''); const n = parseInt(s, 16); return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; };
+
+      // 7) LOGO LOCKUP: pair a monogram badge with the business name in the header when there's no
+      //    real image logo — the "designed brand mark" that separates a real site from a template.
+      try {
+        const hMatch = html.match(/<header[\s\S]*?<\/header>/i);
+        const nameStr = String(biz.name || '').trim();
+        if (hMatch && nameStr && !/<img\b/i.test(hMatch[0]) && hMatch[0].indexOf(nameStr) >= 0) {
+          const initials = (nameStr.replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')) || nameStr[0].toUpperCase();
+          const badge = '<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:2.2rem;height:2.2rem;border-radius:.6rem;background:' + primary + ';color:#fff;font-weight:800;font-size:.85rem;line-height:1;flex:0 0 auto">' + initials + '</span>';
+          const lockup = '<span style="display:inline-flex;align-items:center;gap:.55rem">' + badge + '<span>' + nameStr + '</span></span>';
+          const newHdr = hMatch[0].replace(nameStr, () => lockup);
+          html = html.replace(hMatch[0], () => newHdr);
+        }
+      } catch (e) {}
+
+      // 8) PHONE + TEXTURE insurance: guarantee it looks right on a cell phone (no horizontal scroll,
+      //    no edge-to-edge text, headline scales down) and add a subtle dot-grid depth like sitedrop.
+      const polish = '<style>'
+        + 'html,body{overflow-x:hidden;max-width:100%}img{max-width:100%;height:auto}*{min-width:0}'
+        + 'body{background-image:radial-gradient(' + hexA(primary, 0.05) + ' 1px,transparent 1px);background-size:22px 22px}'
+        + '@media (max-width:640px){'
+        + 'h1{font-size:clamp(1.9rem,8vw,2.75rem);line-height:1.12;word-break:break-word}'
+        + '.max-w-7xl,.max-w-6xl,.max-w-5xl,.max-w-4xl,.max-w-3xl,.max-w-2xl,.max-w-xl,.max-w-lg,.max-w-md{padding-left:1.1rem;padding-right:1.1rem}'
+        + '.text-6xl,.text-7xl,.text-8xl{font-size:2.5rem;line-height:1.1}'
+        + '}</style>';
+      html = html.replace(/<\/head>/i, polish + '</head>');
 
       return res.status(200).json({ result: { html } });
     }
