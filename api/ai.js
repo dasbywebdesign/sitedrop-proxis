@@ -41,7 +41,7 @@ module.exports = async (req, res) => {
         '(<!DOCTYPE html> … </html>) for this local business\'s landing page — no markdown fences, no commentary.',
         'Use Tailwind via <script src="https://cdn.tailwindcss.com"></script> plus a tailwind.config <script> that defines a',
         'coordinated brand palette and font pairing. Load fonts from Google Fonts. Use Lucide icons via',
-        '<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script> and call lucide.createIcons().',
+        '<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>. Render EACH icon as <i data-lucide="<valid-lucide-name>"></i> (valid Lucide names ONLY — e.g. wrench, car, gauge, disc, shield-check, phone, clock, map-pin, star, check; NEVER a CSS class like "lucide-tire" and NEVER an invented name), and call lucide.createIcons() in a script at the END of body (after the DOM exists), not in head.',
         'HEAD & SEO (REQUIRED — these are all GRADED by a quality gate; include EVERY one): <html lang="en">; a descriptive UNIQUE <title> "<Business Name> — <primary service> in <city>"; <meta name="description" content="a specific ~150-char summary">; <meta name="viewport" content="width=device-width, initial-scale=1">; <meta name="robots" content="index, follow">; OPEN GRAPH tags (og:title, og:description, og:type="website", and og:image set to the hero image URL if one was provided); a FAVICON via <link rel="icon" href="data:image/svg+xml,<url-encoded simple lettermark SVG in the brand color>">; and JSON-LD structured data — a <script type="application/ld+json"> with @type LocalBusiness including name, description, telephone, address (streetAddress/addressLocality/addressRegion/postalCode from the given address), url, and image.',
         '',
         'DESIGN SYSTEM (follow closely):',
@@ -168,6 +168,12 @@ module.exports = async (req, res) => {
       if (!/privacy/i.test(html)) {
         const pv = '<section id="privacy" style="max-width:820px;margin:0 auto;padding:36px 24px;font-size:13px;line-height:1.65;opacity:.72"><h2 style="font-size:16px;margin-bottom:8px">Privacy Policy</h2><p>We respect your privacy. Any information you submit through our contact form (name, email, message) is used solely to respond to your inquiry — it is never sold, rented, or shared with third parties. Contact us anytime to update or remove your information.</p></section>';
         html = /<\/footer>/i.test(html) ? html.replace(/<footer/i, pv + '<footer') : (/<\/body>/i.test(html) ? html.replace(/<\/body>/i, pv + '</body>') : html + pv);
+      }
+
+      // 4a) Lucide icons: the model often calls lucide.createIcons() in <head> (before the body
+      //     exists, so nothing renders). Ensure a post-DOM call so correctly-authored icons appear.
+      if (/lucide/i.test(html) && !/DOMContentLoaded[\s\S]{0,80}createIcons/i.test(html)) {
+        html = html.replace(/<\/body>/i, '<script>document.addEventListener("DOMContentLoaded",function(){try{lucide.createIcons()}catch(e){}})</' + 'script></body>');
       }
 
       // 4b) Tailwind uses "gray", not "grey" — the model sometimes writes bg-grey-100 etc., which is
