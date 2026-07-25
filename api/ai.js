@@ -154,6 +154,11 @@ module.exports = async (req, res) => {
       if (!/property="og:title"/i.test(html)) inji.push('<meta property="og:title" content="' + nm + '"><meta property="og:description" content="' + desc + '"><meta property="og:type" content="website">');
       if (!/rel="icon"/i.test(html)) { const ltr = (nm[0] || 'B').toUpperCase(); inji.push('<link rel="icon" href="data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#111"/><text x="32" y="44" font-size="34" text-anchor="middle" fill="#fff" font-family="Georgia">' + ltr + '</text></svg>') + '">'); }
       if (inji.length) html = html.replace(/<\/head>/i, inji.join('') + '</head>');
+      // 4) Privacy notice — inject a compact one if missing (the gate checks for it).
+      if (!/privacy/i.test(html)) {
+        const pv = '<section id="privacy" style="max-width:820px;margin:0 auto;padding:36px 24px;font-size:13px;line-height:1.65;opacity:.72"><h2 style="font-size:16px;margin-bottom:8px">Privacy Policy</h2><p>We respect your privacy. Any information you submit through our contact form (name, email, message) is used solely to respond to your inquiry — it is never sold, rented, or shared with third parties. Contact us anytime to update or remove your information.</p></section>';
+        html = /<\/footer>/i.test(html) ? html.replace(/<footer/i, pv + '<footer') : (/<\/body>/i.test(html) ? html.replace(/<\/body>/i, pv + '</body>') : html + pv);
+      }
 
       return res.status(200).json({ result: { html } });
     }
