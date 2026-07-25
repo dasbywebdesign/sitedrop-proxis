@@ -16,7 +16,23 @@
 //   SFX_TAIL_MODEL   (default fal-ai/kling-video/v1.6/pro/image-to-video — supports tail_image_url)
 //   SFX_EDIT_MODEL   (default fal-ai/flux-pro/kontext — image editing for the exploded frame)
 
+const { put } = require('@vercel/blob');
+
 const QUEUE = 'https://queue.fal.run';
+
+// Copy a finished fal video into Vercel Blob so the URL is permanently ours (fal file
+// retention isn't guaranteed forever, and client sites must never lose their hero clip).
+async function persistVideo(url) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return url;
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(40000) });
+    if (!r.ok) return url;
+    const buf = Buffer.from(await r.arrayBuffer());
+    const name = 'sitedrop-sfx/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.mp4';
+    const blob = await put(name, buf, { access: 'public', contentType: 'video/mp4', token: process.env.BLOB_READ_WRITE_TOKEN });
+    return blob.url;
+  } catch (_) { return url; }
+}
 const VIDEO_MODEL = () => process.env.SFX_VIDEO_MODEL || 'fal-ai/kling-video/v2.1/standard/image-to-video';
 const TAIL_MODEL = () => process.env.SFX_TAIL_MODEL || 'fal-ai/kling-video/v1.6/pro/image-to-video';
 const EDIT_MODEL = () => process.env.SFX_EDIT_MODEL || 'fal-ai/flux-pro/kontext';
@@ -103,7 +119,7 @@ module.exports = async (req, res) => {
       const c = await queueCheck(job.m, job.r);
       if (!c.done) return res.status(200).json({ status: 'rendering' });
       if (c.failed) return res.status(200).json({ error: c.failed });
-      return res.status(200).json({ video: c.url, poster: job.p || '' });
+      return res.status(200).json({ video: await persistVideo(c.url), poster: job.p || '' });
     }
 
     // action === 'create'
