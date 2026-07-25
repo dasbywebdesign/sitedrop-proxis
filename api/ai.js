@@ -75,8 +75,8 @@ module.exports = async (req, res) => {
         '• MOTION: add a .animate-on-scroll fade-up revealed by an IntersectionObserver, and honor prefers-reduced-motion.',
         '',
         'CONTENT: write real, specific, warm copy for THIS business (named packages/prices, local references, real-sounding',
-        'testimonials with names) — never lorem ipsum. IMAGERY: use the provided image URLs if any, otherwise',
-        'https://image.pollinations.ai/prompt/<url-encoded scene>?width=1200&height=800&nologo=true with vivid industry-specific scenes.',
+        'testimonials with names) — never lorem ipsum. IMAGERY: use the provided image URLs if any. For any OTHER image (about, gallery, testimonial avatars) build a pollinations URL:',
+        'https://image.pollinations.ai/prompt/<url-encoded scene>?width=1200&height=1500&nologo=true&nofeed=true&enhance=true&model=flux — and write a RICH, specific, photographic scene (subject + setting + golden-hour lighting + 35mm/50mm lens + shallow depth of field + "editorial magazine-quality photograph, hyper-detailed" + "no text no watermark"). Descriptive prompts = far better images. For testimonial avatars use a real portrait scene ("candid editorial portrait of a warm smiling <persona>, natural light, shallow depth of field, no text").',
         '',
         'QUALITY GATE (REQUIRED — graded): EXACTLY ONE <h1> on the entire page (the hero headline; every other heading is h2/h3/h4 — do NOT use a second h1). Footer copyright MUST render the CURRENT year via inline script: © <script>document.write(new Date().getFullYear())</script> — never a hard-coded past year. Include a real PRIVACY notice: a footer "Privacy Policy" link to a short privacy section/statement on the page (id="privacy") covering what info the contact form collects and that it is not shared.',
         'ACCESSIBILITY (required): semantic landmarks (header/nav/main/footer), exactly one <h1>, a <label> for every form field,',
@@ -253,7 +253,13 @@ module.exports = async (req, res) => {
         const initials = nameStr ? ((nameStr.replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')) || nameStr[0].toUpperCase()) : '';
         // Only inject if the model did NOT already build a brand mark (image, a "logo"-classed
         // element, an icon, or a standalone monogram of the initials) — else we double up badges.
-        const hasMark = hMatch && (/<img\b/i.test(hMatch[0]) || /class="[^"]*\blogo\b/i.test(hMatch[0]) || /data-lucide=/i.test(hMatch[0].replace(/data-lucide="menu"/i, '')) || (initials && new RegExp('>\\s*' + initials + '\\s*<').test(hMatch[0])));
+        const hasMark = hMatch && (
+          /<img\b/i.test(hMatch[0]) ||
+          /class="[^"]*\blogo\b/i.test(hMatch[0]) ||
+          /data-lucide="(?!menu)[a-z][a-z-]*"/i.test(hMatch[0]) ||        // any icon logo other than the hamburger
+          />\s*[A-Z]{2,4}\s*</.test(hMatch[0]) ||                          // a standalone monogram like "GF"/"WT"
+          (initials && new RegExp('>\\s*' + initials + '\\s*<').test(hMatch[0]))
+        );
         if (hMatch && nameStr && !hasMark && hMatch[0].indexOf(nameStr) >= 0) {
           const badge = '<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:2.2rem;height:2.2rem;border-radius:.6rem;background:' + primary + ';color:#fff;font-weight:800;font-size:.85rem;line-height:1;flex:0 0 auto">' + initials + '</span>';
           const lockup = '<span style="display:inline-flex;align-items:center;gap:.55rem">' + badge + '<span>' + nameStr + '</span></span>';
