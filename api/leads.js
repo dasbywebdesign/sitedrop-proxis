@@ -26,7 +26,8 @@ module.exports = async (req, res) => {
   const radius = Math.min(Number(b.radius) || 8000, 30000);
   if (!isFinite(lat) || !isFinite(lon)) return res.status(400).json({ error: 'lat/lon required' });
   const tag = typeof b.tag === 'string' && /^"[\w:]+"="[\w;|_-]+"$/.test(b.tag) ? b.tag : null;
-  const name = String(b.name || '').replace(/[^a-z0-9 ]/gi, '').trim();
+  // allow "|" so callers can pass an OR-regex of name synonyms (e.g. heating|air condition|hvac)
+  const name = String(b.name || '').replace(/[^a-z0-9 |]/gi, '').replace(/\|{2,}/g, '|').replace(/^\||\|$/g, '').trim();
   const qword = String(b.qword || name || 'business').slice(0, 60);
 
   // --- primary: Overpass mirrors, 9s each ---
