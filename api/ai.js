@@ -51,6 +51,7 @@ module.exports = async (req, res) => {
         '  NEVER fall back to a generic default like bootstrap blue (#007bff/#0d6efd), material indigo (#3F51B5), or purple —',
         '  those instantly read as an un-designed template. Commit to a palette that fits the trade (e.g. tire/auto → charcoal +',
         '  safety-red + amber; landscaping → forest-green + stone + sand; spa → sage + cream + warm taupe; law → navy + brass + ivory).',
+        '  For automotive/trades/fitness go BOLD and SATURATED — a confident signature (racing red, safety orange, electric blue) plus a bright accent (gold/amber) over NEAR-BLACK surfaces; use full-bleed near-black sections for drama. Do not mute it.',
         '• FONTS: pair a display serif for headings with a geometric sans for body (or a bold condensed sans + clean sans',
         '  for energetic industries). Headings use the serif; body uses the sans.',
         '• TYPE SCALE (use ONE modular scale — do NOT invent one-off sizes): base body 16px (1rem), ratio 1.25 (major third). Named tiers, mapped by role:',
@@ -68,7 +69,9 @@ module.exports = async (req, res) => {
         '  caption that fades in on hover; one tile can be a gradient CTA card instead of a photo.',
         '• TESTIMONIALS: place on a dark section with blurred color-glow blobs behind; use glassmorphism cards',
         '  (translucent bg, backdrop-blur, subtle border), a quote icon, italic serif quotes, and a star rating row.',
-        '• CARDS rounded-2xl, BUTTONS rounded-full, tasteful shadows, smooth scroll, and subtle hover transitions everywhere.',
+        '• BUTTON SHAPE matches the brand personality: SHARP squared (rounded-none/rounded-md), uppercase, bold, with a hover COLOR-INVERSION (e.g. black→signature-color) for automotive/industrial/trades/fitness; soft rounded-full pills for wellness/beauty/food/kids. Pick ONE and use it consistently.',
+        '• BRANDED DEPTH — layer at least 3 of: an offset solid color block sitting behind the hero/feature image; an oversized faint outline circle bleeding off a section edge; a floating badge/info card overlapping an image corner; a per-section texture (dot-grid or 45° stripes at ~5% opacity); a thin multi-color accent bar across the top of a dark section; numbered process steps joined by a gradient connector line. This layering is what separates a real site from a flat template.',
+        '• CARDS rounded (match button family), tasteful shadows, smooth scroll, and subtle hover transitions (lift + border/color change) everywhere.',
         '• MOTION: add a .animate-on-scroll fade-up revealed by an IntersectionObserver, and honor prefers-reduced-motion.',
         '',
         'CONTENT: write real, specific, warm copy for THIS business (named packages/prices, local references, real-sounding',
@@ -84,7 +87,7 @@ module.exports = async (req, res) => {
         'RESPONSIVE (REQUIRED — non-negotiable): the site MUST look perfect on phone, tablet, AND desktop. Include <meta name="viewport" content="width=device-width, initial-scale=1">.',
         'Use responsive Tailwind prefixes (sm: md: lg:) on every multi-column layout — grids collapse to one column on mobile, font sizes scale down (use clamp() or responsive text classes), padding shrinks on small screens.',
         'EVERY max-width content container MUST carry horizontal padding (e.g. px-5 sm:px-6) so text and buttons never touch the screen edge on a phone. The hero headline must scale on mobile (clamp or text-4xl sm:text-5xl lg:text-6xl), never a fixed huge size that overflows.',
-        'The nav MUST have a working mobile hamburger menu (a button that toggles the links) that appears under md: and hides the desktop link row. No horizontal scrolling at any width. Tap targets >= 44px. Images use max-width:100% and never overflow.',
+        'The nav MUST have a WORKING mobile hamburger menu: put the mobile links in their own container with id="mobile-menu" class="hidden ..."; the hamburger button onclick toggles ONLY that container — document.getElementById("mobile-menu").classList.toggle("hidden") — then swaps the menu/x icon and re-runs lucide.createIcons(). NEVER toggle the button’s own wrapper or a desktop-only div. It must actually open and show the links when tapped on a 375px screen. No horizontal scrolling at any width. Tap targets >= 44px. Images use max-width:100% and never overflow.',
         '',
         'REQUIRED SECTIONS (include ALL, in this order — do not skip any):',
         '1. Sticky header nav: a LOGO LOCKUP (a rounded-square monogram badge with the business initials in the brand primary, OR a small relevant inline-SVG mark, set NEXT TO the business name — never the bare name alone), anchor links, a tap-to-call phone (tel: link) if a phone is given, and a filled primary CTA. Echo a smaller lockup in the footer.',
@@ -212,6 +215,16 @@ module.exports = async (req, res) => {
           const css = '<style>h1,h2,h3,h4,.font-display,.font-serif{font-family:"' + disp + '",' + fb + '}body{font-family:"' + bod + '",system-ui,-apple-system,sans-serif}</style>';
           html = html.replace(/<\/head>/i, link + css + '</head>');
         }
+      }
+
+      // 5b) TRADE TYPE TREATMENT: for automotive/trades/fitness the benchmark look is a BOLD CONDENSED
+      //     font in UPPERCASE with tight tracking (Oswald-poster energy). Enforce it deterministically
+      //     for those industries so headings stop reading as a soft, generic serif.
+      const indL = String(body.industry || biz.type || '').toLowerCase();
+      const TRADES = /tire|auto|car\b|vehicle|mechanic|repair|garage|body ?shop|detail|hvac|plumb|electric|roofing|constru|contractor|landscap|fitness|gym|crossfit|weld|tow|fabricat|machin|excavat|paving|concrete|fencing|mover|moving|pest|locksmith|glass|paint/;
+      if (TRADES.test(indL)) {
+        const treat = '<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&display=swap" rel="stylesheet"><style>h1,h2,h3,h4,.font-display,.font-heading,.font-serif{font-family:"Oswald",system-ui,sans-serif!important;text-transform:uppercase;letter-spacing:.01em;line-height:1.05}</style>';
+        html = html.replace(/<\/head>/i, treat + '</head>');
       }
 
       // 6) Brand primary (from the model's Tailwind config) drives the logo mark + texture below.
