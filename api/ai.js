@@ -45,8 +45,11 @@ module.exports = async (req, res) => {
         'HEAD & SEO (REQUIRED — these are all GRADED by a quality gate; include EVERY one): <html lang="en">; a descriptive UNIQUE <title> "<Business Name> — <primary service> in <city>"; <meta name="description" content="a specific ~150-char summary">; <meta name="viewport" content="width=device-width, initial-scale=1">; <meta name="robots" content="index, follow">; OPEN GRAPH tags (og:title, og:description, og:type="website", and og:image set to the hero image URL if one was provided); a FAVICON via <link rel="icon" href="data:image/svg+xml,<url-encoded simple lettermark SVG in the brand color>">; and JSON-LD structured data — a <script type="application/ld+json"> with @type LocalBusiness including name, description, telephone, address (streetAddress/addressLocality/addressRegion/postalCode from the given address), url, and image.',
         '',
         'DESIGN SYSTEM (follow closely):',
-        '• PALETTE: pick a COORDINATED 4-5 color system fitting the industry — a deep primary, a metallic/secondary,',
+        '• PALETTE: pick a COORDINATED 4-5 color system DERIVED FROM THE INDUSTRY & BRAND — a deep primary, a metallic/secondary,',
         '  a soft accent, a WARM off-white background (never pure #fff), and a soft-black ink. Not a single accent.',
+        '  NEVER fall back to a generic default like bootstrap blue (#007bff/#0d6efd), material indigo (#3F51B5), or purple —',
+        '  those instantly read as an un-designed template. Commit to a palette that fits the trade (e.g. tire/auto → charcoal +',
+        '  safety-red + amber; landscaping → forest-green + stone + sand; spa → sage + cream + warm taupe; law → navy + brass + ivory).',
         '• FONTS: pair a display serif for headings with a geometric sans for body (or a bold condensed sans + clean sans',
         '  for energetic industries). Headings use the serif; body uses the sans.',
         '• TYPE SCALE (use ONE modular scale — do NOT invent one-off sizes): base body 16px (1rem), ratio 1.25 (major third). Named tiers, mapped by role:',
@@ -111,7 +114,13 @@ module.exports = async (req, res) => {
         '  • contact — a page header, prominent phone (tel:), address and hours, AND the WORKING contact <form> (labeled Name/Email/Message + hidden honeypot; submit preventDefaults, shows the polished accessible "Message sent ✓" toast and resets the form), plus a service-area note.',
         'Keep markup efficient (favor Tailwind utility classes over long custom CSS) so the ENTIRE multi-page document is returned complete and never truncated. Always close </html>.',
       ].join('\n');
-      const sysFinal = body.multipage ? (sysFP + '\n\n' + MULTIPAGE) : sysFP;
+      const FLAGSHIP = [
+        'FLAGSHIP (PREMIUM) BUILD: this is the top-tier build — one LONG, dense, richly-designed single page (the format that beats multi-page splits).',
+        'Beyond the required sections, ADD: a 3-up stat/proof row inside the hero; an asymmetric image GALLERY (bento grid, grid-cols-12 uneven spans) using the provided imagery with hover zoom;',
+        'a "Why choose us" 4-up value grid or a simple us-vs-them comparison; a mid-page full-width CTA band on the deep primary color; and expand the FAQ to 5-6 items.',
+        'Write MORE copy per section (2-4 real sentences each) with specific local detail and named service packages. Favor depth, polish, and length over brevity — this must feel like the most expensive site the owner has seen.',
+      ].join('\n');
+      const sysFinal = body.multipage ? (sysFP + '\n\n' + MULTIPAGE) : (body.premium ? (sysFP + '\n\n' + FLAGSHIP) : sysFP);
       const userFP = 'BUSINESS:\n' + JSON.stringify(biz, null, 2) +
         '\nINDUSTRY: ' + String(body.industry || '') +
         '\nIMAGE URLS (use these for the hero/gallery if present): ' + JSON.stringify(body.images || []) +
@@ -119,7 +128,7 @@ module.exports = async (req, res) => {
       const rFP = await fetch(base + '/chat/completions', {
         method: 'POST',
         headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, temperature: 0.8, max_tokens: body.multipage ? 16000 : 14000, messages: [{ role: 'system', content: sysFinal }, { role: 'user', content: userFP }] }),
+        body: JSON.stringify({ model, temperature: 0.8, max_tokens: (body.multipage || body.premium) ? 16000 : 14000, messages: [{ role: 'system', content: sysFinal }, { role: 'user', content: userFP }] }),
       });
       const jFP = await rFP.json();
       if (!rFP.ok) return res.status(200).json({ error: (jFP.error && jFP.error.message) || ('HTTP ' + rFP.status) });
@@ -158,6 +167,21 @@ module.exports = async (req, res) => {
       if (!/privacy/i.test(html)) {
         const pv = '<section id="privacy" style="max-width:820px;margin:0 auto;padding:36px 24px;font-size:13px;line-height:1.65;opacity:.72"><h2 style="font-size:16px;margin-bottom:8px">Privacy Policy</h2><p>We respect your privacy. Any information you submit through our contact form (name, email, message) is used solely to respond to your inquiry — it is never sold, rented, or shared with third parties. Contact us anytime to update or remove your information.</p></section>';
         html = /<\/footer>/i.test(html) ? html.replace(/<footer/i, pv + '<footer') : (/<\/body>/i.test(html) ? html.replace(/<\/body>/i, pv + '</body>') : html + pv);
+      }
+
+      // 5) FONT INSURANCE: the model frequently ships NO web font, so the page renders in system
+      //    Arial — the #1 "looks like a template" tell. If no Google Font is loaded, inject an
+      //    industry-appropriate display+body pairing and bind it to headings/body.
+      if (!/fonts\.googleapis\.com/i.test(html)) {
+        const ind = String(body.industry || biz.type || '').toLowerCase();
+        let disp = 'Oswald', bod = 'Inter', fb = 'sans-serif'; // condensed/industrial default (auto, trades, fitness, tire)
+        if (/law|attorney|account|financ|consult|real ?estate|realt|insur|medic|dental|clinic|wealth|advisor/.test(ind)) { disp = 'Playfair Display'; bod = 'Source Sans 3'; fb = 'serif'; }
+        else if (/salon|spa|beauty|boutique|florist|wedding|photo|interior|jewel|aesthetic|nail|hair/.test(ind)) { disp = 'Cormorant Garamond'; bod = 'Nunito Sans'; fb = 'serif'; }
+        else if (/restaurant|food|grill|bar\b|brew|pizza|taco|kitchen|cafe|coffee|bakery|bistro|catering/.test(ind)) { disp = 'Fraunces'; bod = 'Inter'; fb = 'serif'; }
+        const fam = (n) => n.replace(/ /g, '+');
+        const link = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=' + fam(disp) + ':wght@500;600;700&family=' + fam(bod) + ':wght@300;400;500;600;700&display=swap" rel="stylesheet">';
+        const css = '<style>h1,h2,h3,h4,.font-display,.font-serif{font-family:"' + disp + '",' + fb + '}body{font-family:"' + bod + '",system-ui,-apple-system,sans-serif}</style>';
+        html = html.replace(/<\/head>/i, link + css + '</head>');
       }
 
       return res.status(200).json({ result: { html } });
