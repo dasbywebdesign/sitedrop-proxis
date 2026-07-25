@@ -107,14 +107,16 @@ module.exports = async (req, res) => {
     const mode = body.mode === 'exploded' ? 'exploded' : 'cinematic';
 
     if (mode === 'cinematic') {
-      const { requestId } = await queueSubmit(VIDEO_MODEL(), {
+      // Optional body.model overrides the default (e.g. a turbo tier when the standard queue is deep).
+      const vm = (body.model && /^fal-ai\/[a-z0-9/._-]+$/i.test(String(body.model))) ? String(body.model) : VIDEO_MODEL();
+      const { requestId } = await queueSubmit(vm, {
         prompt: cinematicPrompt(body.motion),
         image_url: image,
         duration: '5',
       });
       // Don't embed a huge data-uri poster inside the job token — the client already has the image.
       const poster = image.length < 2000 ? image : '';
-      return res.status(200).json({ jobId: enc({ m: VIDEO_MODEL(), r: requestId, p: poster }), poster });
+      return res.status(200).json({ jobId: enc({ m: vm, r: requestId, p: poster }), poster });
     }
 
     // exploded: synthesize the end frame from the photo, then first→last-frame video
