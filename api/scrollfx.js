@@ -1,102 +1,91 @@
-// Scroll FX (exploded-view) proxy — powers the Dasby Sites "Scroll FX" Pro add-on.
-// Runs the full pipeline server-side on your Higgsfield Cloud key so the client's
-// browser never sees it: assembled still -> exploded still -> first/last-frame
-// disassembly video. Returns a video URL the tool turns into a scroll-scrub section.
+// Scroll FX proxy — turns a PHOTO into a scroll-scrubbed motion clip via fal.ai (FAL_KEY).
+// Rewired from the never-completed Higgsfield video path to fal's queue API, which makes
+// this work end-to-end for the first time. Stateless: the jobId encodes the fal request,
+// so no Redis/KV is needed.
 //
-// Because a full render takes minutes (well past the 60s serverless limit), this is
-// ACTION-BASED and the client polls:
-//   POST { action:'create', product, parts:[], style:'exploded' }
-//        -> { jobId }                       (kicks off images+video, returns immediately)
+//   POST { action:'create', mode:'cinematic', image:'<url or data-uri>', motion? }
+//        -> { jobId, poster }        (queues a Kling image-to-video render; ~$0.35/5s clip)
+//   POST { action:'create', mode:'exploded', image:'<product photo url/data-uri>', product, parts:[] }
+//        -> { jobId, poster }        (synthesizes the exploded end-frame from the photo via
+//                                     Flux Kontext, then queues a first→last-frame Kling render)
 //   POST { action:'poll', jobId }
-//        -> { status } | { video, poster } | { error }
+//        -> { status:'rendering' } | { video, poster } | { error }
 //
-// SETUP (Vercel env vars)
-//   HF_CREDENTIALS  = KEY_ID:KEY_SECRET        (same key api/higgsfield.js already uses)
-//   SFX_IMG_MODEL   = higgsfield-ai/soul/standard          (text/image-to-image model)
-//   SFX_VIDEO_MODEL = <video model path>       (first/last-frame model on your plan)
-//   SFX_KV_URL, SFX_KV_TOKEN                    (optional Upstash Redis REST for job state;
-//                                               if unset, falls back to stateless single-call)
-//   ALLOW_ORIGIN    = *
-//
-// NOTE: the exact video model path depends on what your Higgsfield Cloud plan exposes.
-// Set SFX_VIDEO_MODEL once confirmed; until then 'create' returns { error:'video_model_unset' }
-// and the tool gracefully falls back to samples / paste-a-clip.
+// Env: FAL_KEY (required). Optional overrides:
+//   SFX_VIDEO_MODEL  (default fal-ai/kling-video/v2.1/standard/image-to-video)
+//   SFX_TAIL_MODEL   (default fal-ai/kling-video/v1.6/pro/image-to-video — supports tail_image_url)
+//   SFX_EDIT_MODEL   (default fal-ai/flux-pro/kontext — image editing for the exploded frame)
 
-const BASE = 'https://platform.higgsfield.ai';
+const QUEUE = 'https://queue.fal.run';
+const VIDEO_MODEL = () => process.env.SFX_VIDEO_MODEL || 'fal-ai/kling-video/v2.1/standard/image-to-video';
+const TAIL_MODEL = () => process.env.SFX_TAIL_MODEL || 'fal-ai/kling-video/v1.6/pro/image-to-video';
+const EDIT_MODEL = () => process.env.SFX_EDIT_MODEL || 'fal-ai/flux-pro/kontext';
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', process.env.ALLOW_ORIGIN || '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
-function hfHeaders() {
-  return { Authorization: 'Key ' + process.env.HF_CREDENTIALS, 'Content-Type': 'application/json', Accept: 'application/json' };
-}
-const pickUrl = (d) => (d && d.images && d.images[0] && d.images[0].url) ||
-                       (d && d.image && d.image.url) ||
-                       (d && d.video && d.video.url) ||
-                       (d && d.videos && d.videos[0] && d.videos[0].url) ||
-                       (d && d.results && d.results.raw && d.results.raw.url) || null;
+const H = () => ({ Authorization: 'Key ' + process.env.FAL_KEY, 'Content-Type': 'application/json' });
 
-// Submit a generation, return { requestId, statusUrl, done?, url? }.
-async function submit(model, payload) {
-  const r = await fetch(`${BASE}/${model}`, { method: 'POST', headers: hfHeaders(), body: JSON.stringify(payload) });
-  let d = {}; try { d = await r.json(); } catch (_) {}
-  if (!r.ok) throw new Error((d && (d.message || d.detail || d.error)) || ('HTTP ' + r.status));
-  const url = pickUrl(d);
-  if (d.status === 'completed' || url) return { done: true, url };
-  const statusUrl = d.status_url || (d.request_id ? `${BASE}/requests/${d.request_id}/status` : null);
-  if (!statusUrl) throw new Error('no_status_url');
-  return { done: false, requestId: d.request_id, statusUrl };
+const enc = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+const dec = (s) => { try { return JSON.parse(Buffer.from(String(s), 'base64url').toString()); } catch (_) { return null; } };
+
+async function falJson(r) { try { return await r.json(); } catch (_) { return {}; } }
+function falErr(j, status) {
+  const d = j && j.detail;
+  return (Array.isArray(d) ? (d[0] && d[0].msg) : d) || (j && j.error) || ('fal HTTP ' + status);
 }
-// Poll one status URL to completion (bounded).
-async function poll(statusUrl, budgetMs) {
-  const deadline = Date.now() + budgetMs;
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 2500));
-    const st = await fetch(statusUrl, { headers: hfHeaders() });
-    let cur = {}; try { cur = await st.json(); } catch (_) {}
-    const s = cur && cur.status, url = pickUrl(cur);
-    if (s === 'completed' || url) { if (!url) throw new Error('no_result_url'); return url; }
-    if (s === 'failed' || s === 'nsfw' || s === 'canceled') throw new Error(s);
+
+// Queue a job on a fal model. Returns { requestId }.
+async function queueSubmit(model, payload) {
+  const r = await fetch(`${QUEUE}/${model}`, { method: 'POST', headers: H(), body: JSON.stringify(payload), signal: AbortSignal.timeout(30000) });
+  const j = await falJson(r);
+  if (!r.ok) throw new Error(falErr(j, r.status));
+  if (!j.request_id) throw new Error('no request_id from fal');
+  return { requestId: j.request_id };
+}
+// Check a queued job. Returns { done, url?, failed? }.
+async function queueCheck(model, requestId) {
+  const s = await fetch(`${QUEUE}/${model}/requests/${requestId}/status`, { headers: H(), signal: AbortSignal.timeout(20000) });
+  const sj = await falJson(s);
+  const st = (sj.status || '').toUpperCase();
+  if (st === 'COMPLETED') {
+    const r = await fetch(`${QUEUE}/${model}/requests/${requestId}`, { headers: H(), signal: AbortSignal.timeout(20000) });
+    const j = await falJson(r);
+    const url = (j.video && j.video.url) || (j.videos && j.videos[0] && j.videos[0].url) || (j.images && j.images[0] && j.images[0].url) || null;
+    return url ? { done: true, url } : { done: true, failed: 'completed_without_url' };
   }
-  return null; // still running
+  if (st === 'FAILED' || st === 'CANCELLED' || st === 'ERROR') return { done: true, failed: st.toLowerCase() };
+  return { done: false };
+}
+// Run a fal model SYNCHRONOUSLY (short jobs like image edits). Returns first image url.
+async function runSync(model, payload) {
+  const r = await fetch(`https://fal.run/${model}`, { method: 'POST', headers: H(), body: JSON.stringify(payload), signal: AbortSignal.timeout(50000) });
+  const j = await falJson(r);
+  if (!r.ok) throw new Error(falErr(j, r.status));
+  const url = (j.images && j.images[0] && j.images[0].url) || (j.image && j.image.url) || null;
+  if (!url) throw new Error('no edit image url');
+  return url;
 }
 
-// --- optional tiny job store (Upstash Redis REST) so 'create' can return fast ---
-async function kvSet(key, val) {
-  if (!process.env.SFX_KV_URL) return false;
-  await fetch(`${process.env.SFX_KV_URL}/set/${encodeURIComponent(key)}?EX=3600`, {
-    method: 'POST', headers: { Authorization: 'Bearer ' + process.env.SFX_KV_TOKEN }, body: JSON.stringify(val),
-  });
-  return true;
+function cinematicPrompt(motion) {
+  return String(motion || '').trim() ||
+    'Subtle cinematic motion: a slow, smooth camera push-in; natural ambient movement (light shifting, foliage or fabric gently moving); the subject holds naturally. Elegant, calm, premium. No cuts, no zoom bursts, no text.';
 }
-async function kvGet(key) {
-  if (!process.env.SFX_KV_URL) return null;
-  const r = await fetch(`${process.env.SFX_KV_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: 'Bearer ' + process.env.SFX_KV_TOKEN } });
-  const j = await r.json().catch(() => ({}));
-  try { return j && j.result ? JSON.parse(j.result) : null; } catch (_) { return null; }
+function explodedFramePrompt(product, parts) {
+  const p = (parts && parts.length) ? parts.join(', ') : 'its main components';
+  return `Exploded technical teardown view of this exact ${product || 'product'}: ${p} separated and floating apart in mid-air, evenly spaced like a precision engineering diagram, same background, same lighting, same camera angle as the original photo, ultra sharp, no text or labels`;
 }
-
-const IMG = () => process.env.SFX_IMG_MODEL || 'higgsfield-ai/soul/standard';
-const VIDEO = () => process.env.SFX_VIDEO_MODEL || '';
-
-function assembledPrompt(product) {
-  return `Photorealistic ${product}, perfectly centered floating on a clean light gray seamless studio background, premium product photography, soft studio lighting, ultra sharp detail, three-quarter angle, no visible brand logos`;
-}
-function explodedPrompt(product, parts) {
-  const p = (parts && parts.length) ? parts.join(', ') : 'main components';
-  return `Exploded technical teardown view of this exact ${product}: its ${p} separated and floating apart in mid-air, evenly spaced like an engineering diagram, precise clean disassembly, identical light gray seamless studio background, identical soft studio lighting, same angle, ultra sharp detail, no visible brand logos`;
-}
-function videoPrompt(product) {
-  return `Product exploded-view teardown animation. The ${product} starts fully assembled, then smoothly comes apart into its parts as a floating engineering diagram with elegant precise motion. Camera locked and static, product centered, clean studio background, no people.`;
+function explodedVideoPrompt(product) {
+  return `Product exploded-view teardown animation: the ${product || 'product'} starts fully assembled and smoothly comes apart into floating, evenly spaced parts. Camera locked and static, elegant precise engineering motion, no people, no text.`;
 }
 
 module.exports = async (req, res) => {
   cors(res);
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
-  if (!process.env.HF_CREDENTIALS) return res.status(500).json({ error: 'HF_CREDENTIALS not set' });
+  if (!process.env.FAL_KEY) return res.status(200).json({ error: 'FAL_KEY not set' });
 
   let body = {};
   try { body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {}); } catch (_) {}
@@ -104,57 +93,47 @@ module.exports = async (req, res) => {
 
   try {
     if (action === 'poll') {
-      const job = await kvGet('sfx:' + body.jobId);
-      if (!job) return res.status(200).json({ error: 'unknown_job' });
-      if (job.video) return res.status(200).json({ video: job.video, poster: job.poster || '' });
-      if (job.statusUrl) {
-        const url = await poll(job.statusUrl, 45000);
-        if (url) { job.video = url; await kvSet('sfx:' + body.jobId, job); return res.status(200).json({ video: url, poster: job.poster || '' }); }
-        return res.status(200).json({ status: 'rendering' });
-      }
-      return res.status(200).json({ status: 'rendering' });
+      const job = dec(body.jobId);
+      if (!job || !job.m || !job.r) return res.status(200).json({ error: 'bad_job' });
+      const c = await queueCheck(job.m, job.r);
+      if (!c.done) return res.status(200).json({ status: 'rendering' });
+      if (c.failed) return res.status(200).json({ error: c.failed });
+      return res.status(200).json({ video: c.url, poster: job.p || '' });
     }
 
     // action === 'create'
-    if (!VIDEO()) return res.status(200).json({ error: 'video_model_unset' });
-    const product = String(body.product || '').trim();
-    if (!product) return res.status(400).json({ error: 'product required' });
-    const parts = Array.isArray(body.parts) ? body.parts.map(String).slice(0, 6) : [];
-    const ar = '16:9';
+    const image = String(body.image || '').trim();
+    if (!image) return res.status(400).json({ error: 'image required (url or data-uri)' });
+    const mode = body.mode === 'exploded' ? 'exploded' : 'cinematic';
 
-    // 1) assembled still
-    let a = await submit(IMG(), { prompt: assembledPrompt(product), aspect_ratio: ar, resolution: '720p' });
-    const assembledUrl = a.done ? a.url : await poll(a.statusUrl, 45000);
-    if (!assembledUrl) return res.status(200).json({ error: 'assembled_timeout' });
-
-    // 2) exploded still (references the assembled frame)
-    let e = await submit(IMG(), { prompt: explodedPrompt(product, parts), image: assembledUrl, aspect_ratio: ar, resolution: '720p' });
-    const explodedUrl = e.done ? e.url : await poll(e.statusUrl, 45000);
-    if (!explodedUrl) return res.status(200).json({ error: 'exploded_timeout' });
-
-    // 3) first/last-frame disassembly video (submit, return jobId; client polls)
-    const v = await submit(VIDEO(), {
-      prompt: videoPrompt(product),
-      start_image: assembledUrl,
-      end_image: explodedUrl,
-      aspect_ratio: ar,
-      duration: 5,
-      generate_audio: false,
-    });
-    if (v.done && v.url) return res.status(200).json({ video: v.url, poster: assembledUrl });
-
-    const jobId = (v.requestId || ('j' + Math.abs(hashStr(assembledUrl + Date.now())).toString(36)));
-    const stored = await kvSet('sfx:' + jobId, { statusUrl: v.statusUrl, poster: assembledUrl });
-    if (!stored) {
-      // No KV store configured — poll inline within the remaining budget as a best effort.
-      const url = await poll(v.statusUrl, 45000);
-      if (url) return res.status(200).json({ video: url, poster: assembledUrl });
-      return res.status(200).json({ error: 'no_kv_store', hint: 'set SFX_KV_URL/SFX_KV_TOKEN so create can return a jobId to poll' });
+    if (mode === 'cinematic') {
+      const { requestId } = await queueSubmit(VIDEO_MODEL(), {
+        prompt: cinematicPrompt(body.motion),
+        image_url: image,
+        duration: '5',
+      });
+      // Don't embed a huge data-uri poster inside the job token — the client already has the image.
+      const poster = image.length < 2000 ? image : '';
+      return res.status(200).json({ jobId: enc({ m: VIDEO_MODEL(), r: requestId, p: poster }), poster });
     }
-    return res.status(200).json({ jobId, poster: assembledUrl });
+
+    // exploded: synthesize the end frame from the photo, then first→last-frame video
+    const product = String(body.product || '').trim();
+    const parts = Array.isArray(body.parts) ? body.parts.map(String).slice(0, 6) : [];
+    const explodedUrl = await runSync(EDIT_MODEL(), {
+      prompt: explodedFramePrompt(product, parts),
+      image_url: image,
+      output_format: 'png',
+    });
+    const { requestId } = await queueSubmit(TAIL_MODEL(), {
+      prompt: explodedVideoPrompt(product),
+      image_url: image,
+      tail_image_url: explodedUrl,
+      duration: '5',
+    });
+    const poster = image.length < 2000 ? image : '';
+    return res.status(200).json({ jobId: enc({ m: TAIL_MODEL(), r: requestId, p: poster }), poster, exploded: explodedUrl });
   } catch (err) {
     return res.status(200).json({ error: err && err.message ? err.message : 'error' });
   }
 };
-
-function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; } return h; }
