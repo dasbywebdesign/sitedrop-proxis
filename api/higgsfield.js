@@ -38,7 +38,7 @@ async function openaiImageBuf(model, prompt, portrait, quality) {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(110000),
+    signal: AbortSignal.timeout(280000),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((j.error && j.error.message) || ('image HTTP ' + r.status));
@@ -63,7 +63,7 @@ async function falImageBuf(model, prompt, portrait) {
     method: 'POST',
     headers: { Authorization: 'Key ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt: prompt + STYLE, image_size: portrait ? 'portrait_4_3' : 'landscape_4_3', num_images: 1, output_format: 'png', safety_tolerance: '5' }),
-    signal: AbortSignal.timeout(110000),
+    signal: AbortSignal.timeout(280000),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((j.detail && (Array.isArray(j.detail) ? (j.detail[0] && j.detail[0].msg) : j.detail)) || j.error || ('fal HTTP ' + r.status));
