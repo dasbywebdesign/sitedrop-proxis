@@ -25,7 +25,10 @@ function pollinations(prompt, portrait) {
 // (gpt-image-1, or dall-e-3 when it obliges) or a hosted URL (dall-e-3 default) which we then fetch.
 // Does NOT send response_format (some keys/proxies reject it). Throws on failure so caller can fall back.
 async function openaiImageBuf(model, prompt, portrait, quality) {
-  const base = (process.env.OPENAI_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
+  // Images can use a SEPARATE key/base from chat: set OPENAI_IMAGE_KEY / OPENAI_IMAGE_BASE to point
+  // at real OpenAI even when OPENAI_BASE/OPENAI_API_KEY is an Azure or chat-only proxy for gpt-4o.
+  const base = (process.env.OPENAI_IMAGE_BASE || process.env.OPENAI_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
+  const key = process.env.OPENAI_IMAGE_KEY || process.env.OPENAI_API_KEY;
   const isGpt = /gpt-image/i.test(model);
   const size = isGpt ? (portrait ? '1024x1536' : '1536x1024') : (portrait ? '1024x1792' : '1792x1024');
   const payload = { model, prompt: prompt + STYLE, size, n: 1 };
@@ -33,7 +36,7 @@ async function openaiImageBuf(model, prompt, portrait, quality) {
                           : ((quality === 'high' || quality === 'hd') ? 'hd' : 'standard'); // dall-e-3: standard|hd
   const r = await fetch(base + '/images/generations', {
     method: 'POST',
-    headers: { Authorization: 'Bearer ' + process.env.OPENAI_API_KEY, 'Content-Type': 'application/json' },
+    headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(58000),
   });
@@ -63,11 +66,11 @@ module.exports = async (req, res) => {
     const portrait = /3:4|9:16|portrait/i.test(String(body.aspect_ratio || '3:4'));
 
     // No credentials → free pollinations image (still usable).
-    if (!process.env.OPENAI_API_KEY || !process.env.BLOB_READ_WRITE_TOKEN) {
-      return res.status(200).json({ url: pollinations(prompt, portrait), source: 'pollinations', note: 'OPENAI_API_KEY / BLOB_READ_WRITE_TOKEN not set' });
+    if (!(process.env.OPENAI_IMAGE_KEY || process.env.OPENAI_API_KEY) || !process.env.BLOB_READ_WRITE_TOKEN) {
+      return res.status(200).json({ url: pollinations(prompt, portrait), source: 'pollinations', note: 'image key / BLOB_READ_WRITE_TOKEN not set' });
     }
 
-    const primary = process.env.OPENAI_IMAGE_MODEL || 'dall-e-3';
+    const primary = (body.model && String(body.model)) || process.env.OPENAI_IMAGE_MODEL || 'dall-e-3';
     let buf, note = '';
     try {
       buf = await openaiImageBuf(primary, prompt, portrait, body.quality);
