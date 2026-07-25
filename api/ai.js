@@ -71,6 +71,7 @@ module.exports = async (req, res) => {
         'text contrast >= 4.5:1 against its background, visible :focus-visible outlines, descriptive alt text on every image,',
         'and a @media (prefers-reduced-motion: reduce) block that disables animation/transition.',
         '',
+        'FORM COPY (REQUIRED): any validation/error message must be specific, constructive, and human — NEVER "Invalid input" or a raw code. Use setCustomValidity or inline helper text, e.g. email invalid → "Please enter a valid email like name@example.com"; empty required field → "Please add your name so we can reply". Friendly, not robotic or blaming. Place the message right next to the field it refers to.',
         'RESPONSIVE (REQUIRED — non-negotiable): the site MUST look perfect on phone, tablet, AND desktop. Include <meta name="viewport" content="width=device-width, initial-scale=1">.',
         'Use responsive Tailwind prefixes (sm: md: lg:) on every multi-column layout — grids collapse to one column on mobile, font sizes scale down (use clamp() or responsive text classes), padding shrinks on small screens.',
         'The nav MUST have a working mobile hamburger menu (a button that toggles the links) that appears under md: and hides the desktop link row. No horizontal scrolling at any width. Tap targets >= 44px. Images use max-width:100% and never overflow.',
