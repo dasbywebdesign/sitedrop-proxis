@@ -46,17 +46,22 @@ async function queueSubmit(model, payload) {
   return { requestId: j.request_id };
 }
 // Check a queued job. Returns { done, url?, failed? }.
+// NOTE: fal's queue API serves status/result under the ROOT app alias (first two path
+// segments, e.g. "fal-ai/kling-video") — NOT the full submit subpath. Polling the subpath
+// 404s silently, which made completed jobs read as "rendering" forever.
 async function queueCheck(model, requestId) {
-  const s = await fetch(`${QUEUE}/${model}/requests/${requestId}/status`, { headers: H(), signal: AbortSignal.timeout(20000) });
+  const root = model.split('/').slice(0, 2).join('/');
+  const s = await fetch(`${QUEUE}/${root}/requests/${requestId}/status`, { headers: H(), signal: AbortSignal.timeout(20000) });
   const sj = await falJson(s);
   const st = (sj.status || '').toUpperCase();
   if (st === 'COMPLETED') {
-    const r = await fetch(`${QUEUE}/${model}/requests/${requestId}`, { headers: H(), signal: AbortSignal.timeout(20000) });
+    const r = await fetch(`${QUEUE}/${root}/requests/${requestId}`, { headers: H(), signal: AbortSignal.timeout(20000) });
     const j = await falJson(r);
     const url = (j.video && j.video.url) || (j.videos && j.videos[0] && j.videos[0].url) || (j.images && j.images[0] && j.images[0].url) || null;
     return url ? { done: true, url } : { done: true, failed: 'completed_without_url' };
   }
   if (st === 'FAILED' || st === 'CANCELLED' || st === 'ERROR') return { done: true, failed: st.toLowerCase() };
+  if (!st && s.status === 404) return { done: true, failed: 'status_404' };
   return { done: false };
 }
 // Run a fal model SYNCHRONOUSLY (short jobs like image edits). Returns first image url.
