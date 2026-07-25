@@ -177,6 +177,11 @@ module.exports = async (req, res) => {
         html = html.replace(/<\/body>/i, '<script>document.addEventListener("DOMContentLoaded",function(){try{lucide.createIcons()}catch(e){}})</' + 'script></body>');
       }
 
+      // 4a2) Lucide: the model invents icon names that don't exist (tire/brake/oil…) → blank icons.
+      //      Remap the common invalid ones to real Lucide icons so no icon slot renders empty.
+      const ICON_FIX = { tire: 'circle-dot', tires: 'circle-dot', wheel: 'circle-dot', brake: 'disc', brakes: 'disc', 'brake-disc': 'disc', oil: 'droplet', 'oil-can': 'droplet', alignment: 'move-horizontal', align: 'move-horizontal', 'align-vertical': 'move-horizontal', patch: 'wrench', engine: 'settings', tuneup: 'wrench', 'tune-up': 'wrench', 'spark-plug': 'zap', sparkplug: 'zap', mechanic: 'wrench', repair: 'wrench', tool: 'wrench', tools: 'wrench', battery: 'battery-charging', coolant: 'thermometer', exhaust: 'wind', suspension: 'move-vertical', diagnostic: 'activity', diagnostics: 'activity', inspection: 'clipboard-check', scissors: 'scissors', haircut: 'scissors', dumbbell: 'dumbbell', plumbing: 'wrench', electrical: 'zap', paint: 'paint-bucket', roofing: 'home', landscaping: 'trees', cleaning: 'sparkles' };
+      html = html.replace(/data-lucide="([^"]+)"/gi, (m, n) => 'data-lucide="' + (ICON_FIX[String(n).toLowerCase()] || n) + '"');
+
       // 4b) Tailwind uses "gray", not "grey" — the model sometimes writes bg-grey-100 etc., which is
       //     an unknown class that renders as no background (flat white sections). Normalize.
       html = html.replace(/\b(bg|text|border|from|via|to|ring|divide|placeholder|fill|stroke)-grey-/g, '$1-gray-');
@@ -219,8 +224,11 @@ module.exports = async (req, res) => {
       try {
         const hMatch = html.match(/<header[\s\S]*?<\/header>/i);
         const nameStr = String(biz.name || '').trim();
-        if (hMatch && nameStr && !/<img\b/i.test(hMatch[0]) && hMatch[0].indexOf(nameStr) >= 0) {
-          const initials = (nameStr.replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')) || nameStr[0].toUpperCase();
+        const initials = nameStr ? ((nameStr.replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')) || nameStr[0].toUpperCase()) : '';
+        // Only inject if the model did NOT already build a brand mark (image, a "logo"-classed
+        // element, an icon, or a standalone monogram of the initials) — else we double up badges.
+        const hasMark = hMatch && (/<img\b/i.test(hMatch[0]) || /class="[^"]*\blogo\b/i.test(hMatch[0]) || /data-lucide=/i.test(hMatch[0].replace(/data-lucide="menu"/i, '')) || (initials && new RegExp('>\\s*' + initials + '\\s*<').test(hMatch[0])));
+        if (hMatch && nameStr && !hasMark && hMatch[0].indexOf(nameStr) >= 0) {
           const badge = '<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:2.2rem;height:2.2rem;border-radius:.6rem;background:' + primary + ';color:#fff;font-weight:800;font-size:.85rem;line-height:1;flex:0 0 auto">' + initials + '</span>';
           const lockup = '<span style="display:inline-flex;align-items:center;gap:.55rem">' + badge + '<span>' + nameStr + '</span></span>';
           const newHdr = hMatch[0].replace(nameStr, () => lockup);
