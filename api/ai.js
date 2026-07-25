@@ -42,6 +42,7 @@ module.exports = async (req, res) => {
         'Use Tailwind via <script src="https://cdn.tailwindcss.com"></script> plus a tailwind.config <script> that defines a',
         'coordinated brand palette and font pairing. Load fonts from Google Fonts. Use Lucide icons via',
         '<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script> and call lucide.createIcons().',
+        'HEAD (required): set <html lang="en">, and a descriptive UNIQUE <title> in the pattern "<Business Name> — <primary service> in <city>" (specific, never a generic placeholder), plus a <meta name="description">.',
         '',
         'DESIGN SYSTEM (follow closely):',
         '• PALETTE: pick a COORDINATED 4-5 color system fitting the industry — a deep primary, a metallic/secondary,',
