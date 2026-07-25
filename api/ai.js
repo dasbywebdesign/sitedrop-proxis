@@ -222,8 +222,14 @@ module.exports = async (req, res) => {
       //     for those industries so headings stop reading as a soft, generic serif.
       const indL = String(body.industry || biz.type || '').toLowerCase();
       const TRADES = /tire|auto|car\b|vehicle|mechanic|repair|garage|body ?shop|detail|hvac|plumb|electric|roofing|constru|contractor|landscap|fitness|gym|crossfit|weld|tow|fabricat|machin|excavat|paving|concrete|fencing|mover|moving|pest|locksmith|glass|paint/;
+      const WELLNESS = /yoga|pilates|medita|mindful|wellness|\bspa\b|massage|salon|beauty|aesthetic|reiki|therap|acupunctur|holistic|retreat|wax|facial|skincare|chiropract/;
       if (TRADES.test(indL)) {
+        // Bold, condensed, UPPERCASE — the industrial "poster" look (auto/trades/gym).
         const treat = '<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&display=swap" rel="stylesheet"><style>h1,h2,h3,h4,.font-display,.font-heading,.font-serif{font-family:"Oswald",system-ui,sans-serif!important;text-transform:uppercase;letter-spacing:.01em;line-height:1.05}</style>';
+        html = html.replace(/<\/head>/i, treat + '</head>');
+      } else if (WELLNESS.test(indL)) {
+        // Elegant, airy, light serif in normal case — the calm spa/yoga look.
+        const treat = '<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&display=swap" rel="stylesheet"><style>h1,h2,h3,h4,.font-display,.font-heading,.font-serif{font-family:"Fraunces",Georgia,serif!important;font-weight:400;letter-spacing:-.01em;text-transform:none}h1{font-weight:300}</style>';
         html = html.replace(/<\/head>/i, treat + '</head>');
       }
 
