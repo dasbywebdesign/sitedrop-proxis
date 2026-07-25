@@ -126,6 +126,35 @@ module.exports = async (req, res) => {
       let html = (jFP.choices && jFP.choices[0] && jFP.choices[0].message && jFP.choices[0].message.content) || '';
       html = html.replace(/^\s*```[a-z]*\s*/i, '').replace(/```\s*$/, '').trim();
       if (!/<\/html>/i.test(html)) return res.status(200).json({ error: 'model did not return a full page' });
+
+      // --- Deterministic XENON-gate compliance (LLMs are unreliable on strict structural rules) ---
+      // 1) EXACTLY ONE <h1>: keep the first, demote the rest to <h2>.
+      const firstH1 = html.search(/<h1[\s>]/i);
+      if (firstH1 >= 0) {
+        const fc = html.indexOf('</h1>', firstH1);
+        if (fc >= 0) html = html.slice(0, fc + 5) + html.slice(fc + 5).replace(/<h1(\b[^>]*)>/gi, '<h2$1>').replace(/<\/h1>/gi, '</h2>');
+      }
+      // 2) JSON-LD LocalBusiness — inject if the model skipped it.
+      if (!/application\/ld\+json/i.test(html)) {
+        const ld = { '@context': 'https://schema.org', '@type': 'LocalBusiness', name: biz.name || 'Business' };
+        if (biz.desc) ld.description = String(biz.desc).slice(0, 300);
+        if (biz.phone) ld.telephone = String(biz.phone);
+        if (biz.address) ld.address = String(biz.address);
+        if (biz.email) ld.email = String(biz.email);
+        if (body.images && body.images[0]) ld.image = String(body.images[0]);
+        html = html.replace(/<\/head>/i, '<script type="application/ld+json">' + JSON.stringify(ld) + '</' + 'script></head>');
+      }
+      // 3) Head insurance: viewport / description / robots / Open Graph / favicon if any are missing.
+      const nm = String(biz.name || 'Business').replace(/"/g, '&quot;');
+      const desc = String(biz.desc || (biz.type ? nm + ' — ' + biz.type : nm)).replace(/"/g, '&quot;').slice(0, 155);
+      const inji = [];
+      if (!/name="viewport"/i.test(html)) inji.push('<meta name="viewport" content="width=device-width, initial-scale=1">');
+      if (!/name="description"/i.test(html)) inji.push('<meta name="description" content="' + desc + '">');
+      if (!/name="robots"/i.test(html)) inji.push('<meta name="robots" content="index, follow">');
+      if (!/property="og:title"/i.test(html)) inji.push('<meta property="og:title" content="' + nm + '"><meta property="og:description" content="' + desc + '"><meta property="og:type" content="website">');
+      if (!/rel="icon"/i.test(html)) { const ltr = (nm[0] || 'B').toUpperCase(); inji.push('<link rel="icon" href="data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#111"/><text x="32" y="44" font-size="34" text-anchor="middle" fill="#fff" font-family="Georgia">' + ltr + '</text></svg>') + '">'); }
+      if (inji.length) html = html.replace(/<\/head>/i, inji.join('') + '</head>');
+
       return res.status(200).json({ result: { html } });
     }
 
