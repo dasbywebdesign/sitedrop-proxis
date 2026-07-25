@@ -32,7 +32,7 @@ module.exports = async (req, res) => {
     const task = ['edit', 'fullpage'].includes(body.task) ? body.task : 'copy';
     const biz = body.business || {};
     const base = (process.env.OPENAI_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
-    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    const model = process.env.OPENAI_MODEL || 'gpt-4o';
 
     // ---- AI full-page: the model authors a complete, bespoke, ADA-compliant HTML page ----
     if (task === 'fullpage') {
@@ -120,22 +120,29 @@ module.exports = async (req, res) => {
         'Keep markup efficient (favor Tailwind utility classes over long custom CSS) so the ENTIRE multi-page document is returned complete and never truncated. Always close </html>.',
       ].join('\n');
       const FLAGSHIP = [
-        'FLAGSHIP (PREMIUM) BUILD: this is the top-tier build — one LONG, dense, richly-designed single page (the format that beats multi-page splits).',
-        'Beyond the required sections, ADD: a 3-up stat/proof row inside the hero; an asymmetric image GALLERY (bento grid, grid-cols-12 uneven spans) using the provided imagery with hover zoom;',
-        'a "Why choose us" 4-up value grid or a simple us-vs-them comparison; a mid-page full-width CTA band on the deep primary color; and expand the FAQ to 5-6 items.',
-        'Write MORE copy per section (2-4 real sentences each) with specific local detail and named service packages. Favor depth, polish, and length over brevity — this must feel like the most expensive site the owner has seen.',
+        'FLAGSHIP (PREMIUM) BUILD: this is the top-tier build — one LONG, dense, magazine-quality single page that must look like it cost $5,000+.',
+        'HERO must be a TWO-COLUMN split: left = a small rating/eyebrow pill, a large headline (light weight, with 1–2 emphasis words italicized in an accent color), a lead paragraph, two CTAs, and a small meta row (location · a trust point). Right = the hero image in a LARGE rounded (rounded-3xl/[2rem]) frame, WITH two small FLOATING CARDS overlapping its corners (e.g. a “★ 5.0 Google Reviews” card and a live-detail card like “Next class · 6:30 AM” or “Open Today”). This floating-card-over-rounded-image hero is the signature of a premium build — always include it.',
+        'SIGNATURE DEVICES (include most): service cards each = an icon inside a filled rounded-square (that shifts color/rotates on hover) + title + description + a small meta row; a STATS band of 3–4 big numbers where cards ALTERNATE between white and filled brand-color backgrounds; TESTIMONIALS as 3 cards each with a round avatar + name + star row, with ONE card offset (mt-8) and/or filled in a brand color for rhythm; an ABOUT section on a filled brand-color background with an image carrying an offset “Est. YYYY” badge and 2 small credential cards; a CONTACT section on a DARK gradient background with soft blurred color-blob glows behind, a GLASSMORPHISM form (translucent bg + backdrop-blur + border) beside stacked glass info cards (address/phone/hours/rating); a rich multi-column FOOTER with grouped links, small social icons, a dynamic-year copyright, and an italic tagline.',
+        'DEPTH & MOTION: layer soft blurred color-blob glows (blur-3xl, low opacity) behind hero/about/contact for calm brands, or hard geometric shapes for bold brands. Add a .animate-on-scroll fade-up (translateY+opacity) revealed by an IntersectionObserver, honoring prefers-reduced-motion. Hover-lift every card.',
+        'Write MORE copy per section (2–4 real, specific sentences) with local detail and named packages/prices. Depth, polish, and length over brevity.',
       ].join('\n');
       const sysFinal = body.multipage ? (sysFP + '\n\n' + MULTIPAGE) : (body.premium ? (sysFP + '\n\n' + FLAGSHIP) : sysFP);
       const userFP = 'BUSINESS:\n' + JSON.stringify(biz, null, 2) +
         '\nINDUSTRY: ' + String(body.industry || '') +
         '\nIMAGE URLS (use these for the hero/gallery if present): ' + JSON.stringify(body.images || []) +
         '\nREFINEMENT INSTRUCTION (optional): ' + String(body.instruction || '');
-      const rFP = await fetch(base + '/chat/completions', {
+      const callLLM = (m) => fetch(base + '/chat/completions', {
         method: 'POST',
         headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, temperature: 0.8, max_tokens: (body.multipage || body.premium) ? 16000 : 14000, messages: [{ role: 'system', content: sysFinal }, { role: 'user', content: userFP }] }),
+        body: JSON.stringify({ model: m, temperature: 0.8, max_tokens: (body.multipage || body.premium) ? 16000 : 14000, messages: [{ role: 'system', content: sysFinal }, { role: 'user', content: userFP }] }),
       });
-      const jFP = await rFP.json();
+      let rFP = await callLLM(model);
+      let jFP = await rFP.json();
+      // If the flagship model isn't available on this key (and OPENAI_MODEL wasn't explicitly set),
+      // gracefully fall back to gpt-4o-mini so generation never hard-fails on a model-access error.
+      if (!rFP.ok && !process.env.OPENAI_MODEL && model !== 'gpt-4o-mini' && /model|does not exist|not found|access|unsupported|not allowed|deprecat/i.test((jFP.error && jFP.error.message) || '')) {
+        rFP = await callLLM('gpt-4o-mini'); jFP = await rFP.json();
+      }
       if (!rFP.ok) return res.status(200).json({ error: (jFP.error && jFP.error.message) || ('HTTP ' + rFP.status) });
       let html = (jFP.choices && jFP.choices[0] && jFP.choices[0].message && jFP.choices[0].message.content) || '';
       html = html.replace(/^\s*```[a-z]*\s*/i, '').replace(/```\s*$/, '').trim();
