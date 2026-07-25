@@ -21,14 +21,16 @@ function pollinations(prompt, portrait) {
   return 'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt + STYLE) + '?width=' + w + '&height=' + h + '&nologo=true&nofeed=true&enhance=true&model=flux';
 }
 
-// Ask an OpenAI image model for a base64 PNG. Throws on any failure so the caller can fall back.
-async function openaiImage(model, prompt, portrait, quality) {
+// Ask an OpenAI image model for image BYTES (Buffer). Handles both return shapes — a base64 blob
+// (gpt-image-1, or dall-e-3 when it obliges) or a hosted URL (dall-e-3 default) which we then fetch.
+// Does NOT send response_format (some keys/proxies reject it). Throws on failure so caller can fall back.
+async function openaiImageBuf(model, prompt, portrait, quality) {
   const base = (process.env.OPENAI_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
   const isGpt = /gpt-image/i.test(model);
   const size = isGpt ? (portrait ? '1024x1536' : '1536x1024') : (portrait ? '1024x1792' : '1792x1024');
   const payload = { model, prompt: prompt + STYLE, size, n: 1 };
-  if (isGpt) { payload.quality = quality || 'medium'; }                 // gpt-image-1: low|medium|high
-  else { payload.quality = quality === 'high' ? 'hd' : (quality || 'hd'); payload.response_format = 'b64_json'; } // dall-e-3: standard|hd
+  payload.quality = isGpt ? (quality === 'hd' ? 'high' : (quality || 'medium'))   // gpt-image-1: low|medium|high
+                          : ((quality === 'high' || quality === 'hd') ? 'hd' : 'standard'); // dall-e-3: standard|hd
   const r = await fetch(base + '/images/generations', {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + process.env.OPENAI_API_KEY, 'Content-Type': 'application/json' },
@@ -36,9 +38,15 @@ async function openaiImage(model, prompt, portrait, quality) {
     signal: AbortSignal.timeout(58000),
   });
   const j = await r.json().catch(() => ({}));
-  const b64 = j && j.data && j.data[0] && j.data[0].b64_json;
-  if (!r.ok || !b64) throw new Error((j.error && j.error.message) || ('image HTTP ' + r.status));
-  return b64;
+  if (!r.ok) throw new Error((j.error && j.error.message) || ('image HTTP ' + r.status));
+  const d = j && j.data && j.data[0];
+  if (d && d.b64_json) return Buffer.from(d.b64_json, 'base64');
+  if (d && d.url) {
+    const ir = await fetch(d.url, { signal: AbortSignal.timeout(25000) });
+    if (!ir.ok) throw new Error('fetch image url ' + ir.status);
+    return Buffer.from(await ir.arrayBuffer());
+  }
+  throw new Error('no image data in response');
 }
 
 module.exports = async (req, res) => {
@@ -60,21 +68,20 @@ module.exports = async (req, res) => {
     }
 
     const primary = process.env.OPENAI_IMAGE_MODEL || 'dall-e-3';
-    let b64, note = '';
+    let buf, note = '';
     try {
-      b64 = await openaiImage(primary, prompt, portrait, body.quality);
+      buf = await openaiImageBuf(primary, prompt, portrait, body.quality);
     } catch (e1) {
       note = String((e1 && e1.message) || e1);
       // If gpt-image-1 isn't available on this key (needs org verification), retry with dall-e-3.
       if (/gpt-image/i.test(primary) && /verif|access|not.*(allow|exist)|403|model/i.test(note)) {
-        try { b64 = await openaiImage('dall-e-3', prompt, portrait, body.quality); note += ' | fell back to dall-e-3'; }
+        try { buf = await openaiImageBuf('dall-e-3', prompt, portrait, body.quality); note += ' | fell back to dall-e-3'; }
         catch (e2) { note += ' | dall-e-3 also failed: ' + ((e2 && e2.message) || e2); }
       }
     }
-    if (!b64) return res.status(200).json({ url: pollinations(prompt, portrait), source: 'pollinations', note });
+    if (!buf) return res.status(200).json({ url: pollinations(prompt, portrait), source: 'pollinations', note });
 
     try {
-      const buf = Buffer.from(b64, 'base64');
       const name = 'sitedrop-img/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.png';
       const blob = await put(name, buf, { access: 'public', contentType: 'image/png', token: process.env.BLOB_READ_WRITE_TOKEN });
       return res.status(200).json({ url: blob.url, source: 'openai' });
