@@ -45,7 +45,8 @@ module.exports = async (req, res) => {
         'HEAD & SEO (REQUIRED — these are all GRADED by a quality gate; include EVERY one): <html lang="en">; a descriptive UNIQUE <title> "<Business Name> — <primary service> in <city>"; <meta name="description" content="a specific ~150-char summary">; <meta name="viewport" content="width=device-width, initial-scale=1">; <meta name="robots" content="index, follow">; OPEN GRAPH tags (og:title, og:description, og:type="website", and og:image set to the hero image URL if one was provided); a FAVICON via <link rel="icon" href="data:image/svg+xml,<url-encoded simple lettermark SVG in the brand color>">; and JSON-LD structured data — a <script type="application/ld+json"> with @type LocalBusiness including name, description, telephone, address (streetAddress/addressLocality/addressRegion/postalCode from the given address), url, and image.',
         '',
         'DESIGN SYSTEM (follow closely):',
-        '• PALETTE: pick a COORDINATED 4-5 color system DERIVED FROM THE INDUSTRY & BRAND — a deep primary, a metallic/secondary,',
+        '• PALETTE: pick a COORDINATED 4-5 color system DERIVED FROM THE INDUSTRY & BRAND — a deep primary, a readable mid-tone secondary',
+        '  (NOT a near-white silver/metallic — eyebrows and small text in the secondary must pass contrast on a light background),',
         '  a soft accent, a WARM off-white background (never pure #fff), and a soft-black ink. Not a single accent.',
         '  NEVER fall back to a generic default like bootstrap blue (#007bff/#0d6efd), material indigo (#3F51B5), or purple —',
         '  those instantly read as an un-designed template. Commit to a palette that fits the trade (e.g. tire/auto → charcoal +',
@@ -169,19 +170,36 @@ module.exports = async (req, res) => {
         html = /<\/footer>/i.test(html) ? html.replace(/<footer/i, pv + '<footer') : (/<\/body>/i.test(html) ? html.replace(/<\/body>/i, pv + '</body>') : html + pv);
       }
 
-      // 5) FONT INSURANCE: the model frequently ships NO web font, so the page renders in system
-      //    Arial — the #1 "looks like a template" tell. If no Google Font is loaded, inject an
-      //    industry-appropriate display+body pairing and bind it to headings/body.
+      // 4b) Tailwind uses "gray", not "grey" — the model sometimes writes bg-grey-100 etc., which is
+      //     an unknown class that renders as no background (flat white sections). Normalize.
+      html = html.replace(/\b(bg|text|border|from|via|to|ring|divide|placeholder|fill|stroke)-grey-/g, '$1-gray-');
+
+      // 5) FONT INSURANCE: the #1 "looks like a template" tell is a page that renders in system Arial.
+      //    Two failure modes: (a) the model names fonts in its Tailwind config / CSS but never LOADS
+      //    them, or (b) it names none at all. Fix (a) by loading exactly the fonts it chose (preserving
+      //    its design), and (b) by injecting an industry-appropriate pairing bound to headings/body.
       if (!/fonts\.googleapis\.com/i.test(html)) {
-        const ind = String(body.industry || biz.type || '').toLowerCase();
-        let disp = 'Oswald', bod = 'Inter', fb = 'sans-serif'; // condensed/industrial default (auto, trades, fitness, tire)
-        if (/law|attorney|account|financ|consult|real ?estate|realt|insur|medic|dental|clinic|wealth|advisor/.test(ind)) { disp = 'Playfair Display'; bod = 'Source Sans 3'; fb = 'serif'; }
-        else if (/salon|spa|beauty|boutique|florist|wedding|photo|interior|jewel|aesthetic|nail|hair/.test(ind)) { disp = 'Cormorant Garamond'; bod = 'Nunito Sans'; fb = 'serif'; }
-        else if (/restaurant|food|grill|bar\b|brew|pizza|taco|kitchen|cafe|coffee|bakery|bistro|catering/.test(ind)) { disp = 'Fraunces'; bod = 'Inter'; fb = 'serif'; }
+        const preconnect = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
         const fam = (n) => n.replace(/ /g, '+');
-        const link = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=' + fam(disp) + ':wght@500;600;700&family=' + fam(bod) + ':wght@300;400;500;600;700&display=swap" rel="stylesheet">';
-        const css = '<style>h1,h2,h3,h4,.font-display,.font-serif{font-family:"' + disp + '",' + fb + '}body{font-family:"' + bod + '",system-ui,-apple-system,sans-serif}</style>';
-        html = html.replace(/<\/head>/i, link + css + '</head>');
+        // Whitelist of common Google Font families we can safely load on demand.
+        const WL = ['Merriweather', 'Poppins', 'Oswald', 'Inter', 'Playfair Display', 'Montserrat', 'Lora', 'Roboto', 'Raleway', 'Nunito Sans', 'Nunito', 'Source Sans 3', 'Work Sans', 'Rubik', 'Karla', 'Manrope', 'DM Sans', 'DM Serif Display', 'Cormorant Garamond', 'Fraunces', 'Bebas Neue', 'Archivo', 'Libre Baskerville', 'Space Grotesk', 'Josefin Sans', 'Quicksand', 'Mulish', 'Barlow', 'PT Serif', 'Bitter', 'Teko', 'Anton', 'Cinzel', 'Marcellus', 'Sora', 'Outfit', 'Figtree', 'Plus Jakarta Sans', 'Epilogue'];
+        const used = WL.filter((f) => new RegExp('[\'"\\s\\[(]' + f.replace(/ /g, '[ +]') + '[\'"\\],)]', 'i').test(html)).slice(0, 3);
+        if (used.length) {
+          // (a) The model chose fonts but forgot to load them — load exactly those (no :wght, so a
+          //     family that lacks a requested weight can never 400 the whole stylesheet).
+          const link = preconnect + '<link href="https://fonts.googleapis.com/css2?' + used.map((f) => 'family=' + fam(f)).join('&') + '&display=swap" rel="stylesheet">';
+          html = html.replace(/<\/head>/i, link + '</head>');
+        } else {
+          // (b) No fonts named anywhere — inject an industry-appropriate pairing and bind it.
+          const ind = String(body.industry || biz.type || '').toLowerCase();
+          let disp = 'Oswald', bod = 'Inter', fb = 'sans-serif'; // condensed/industrial default (auto, trades, fitness, tire)
+          if (/law|attorney|account|financ|consult|real ?estate|realt|insur|medic|dental|clinic|wealth|advisor/.test(ind)) { disp = 'Playfair Display'; bod = 'Source Sans 3'; fb = 'serif'; }
+          else if (/salon|spa|beauty|boutique|florist|wedding|photo|interior|jewel|aesthetic|nail|hair/.test(ind)) { disp = 'Cormorant Garamond'; bod = 'Nunito Sans'; fb = 'serif'; }
+          else if (/restaurant|food|grill|bar\b|brew|pizza|taco|kitchen|cafe|coffee|bakery|bistro|catering/.test(ind)) { disp = 'Fraunces'; bod = 'Inter'; fb = 'serif'; }
+          const link = preconnect + '<link href="https://fonts.googleapis.com/css2?family=' + fam(disp) + ':wght@500;600;700&family=' + fam(bod) + ':wght@300;400;500;600;700&display=swap" rel="stylesheet">';
+          const css = '<style>h1,h2,h3,h4,.font-display,.font-serif{font-family:"' + disp + '",' + fb + '}body{font-family:"' + bod + '",system-ui,-apple-system,sans-serif}</style>';
+          html = html.replace(/<\/head>/i, link + css + '</head>');
+        }
       }
 
       return res.status(200).json({ result: { html } });
