@@ -110,6 +110,36 @@ module.exports = async (req, res) => {
   try {
     const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
 
+    // C) IMPORT an existing site for rebuild-and-improve: fetch their pages, return the real
+    //    content + feature signals so the builder can prefill from THEIR copy and match/beat
+    //    every section they currently have.
+    if (b.mode === 'import') {
+      let url = String(b.url || '').trim();
+      if (!url) return res.status(400).json({ error: 'url required' });
+      if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+      let base2; try { base2 = new URL(url); } catch (_) { return res.status(400).json({ error: 'bad url' }); }
+      let html = await grab(url);
+      if (!html) return res.status(200).json({ error: 'could not fetch site (may block bots or be JS-only)' });
+      for (const p of ['/about', '/services', '/menu']) { const h2 = await grab(base2.origin + p); if (h2) html += ' ' + h2; }
+      const strip = (x) => x.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<svg[\s\S]*?<\/svg>/gi, ' ');
+      const clean = strip(html);
+      const text = clean.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      const grabAll = (re, cap) => { const out = []; let m; while ((m = re.exec(clean)) && out.length < 14) { const v = m[cap].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(); if (v && v.length < 70 && !out.includes(v)) out.push(v); } return out; };
+      return res.status(200).json({
+        url: base2.href,
+        title: ((clean.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '').trim().slice(0, 120),
+        metaDesc: ((clean.match(/name=["']description["'][^>]*content=["']([^"']+)/i) || [])[1] || '').slice(0, 200),
+        headings: grabAll(/<h[123][^>]*>([\s\S]*?)<\/h[123]>/gi, 1),
+        nav: grabAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, 1).filter((t) => /^[A-Za-z][A-Za-z &''\-]{1,28}$/.test(t)).slice(0, 12),
+        phone: ((text.match(/(\+?1?[\s.\-]?\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4})/) || [])[1] || ''),
+        email: ((text.match(/[\w.\-]+@[\w.\-]+\.\w{2,}/) || [])[0] || ''),
+        socials: extractSocials(html),
+        hasShop: /\b(shop|cart|checkout|add to cart|store)\b/i.test(text),
+        hasBooking: /\b(book(ing)?( now| online)?|schedule|appointment|reserve)\b/i.test(text),
+        text: text.slice(0, 1800),
+      });
+    }
+
     // B) web search
     if (b.mode === 'search' || b.mode === 'site') {
       const query = String(b.query || '').trim().slice(0, 140);
