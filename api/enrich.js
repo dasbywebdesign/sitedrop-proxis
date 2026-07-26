@@ -118,12 +118,21 @@ module.exports = async (req, res) => {
       if (b.mode === 'site') {
         const name = String(b.name || query);
         const nonDir = results.filter((r) => r.url && !isDirectory(r.url));
-        // Prefer a domain whose name matches the business (allsmilesfresno.com for "All Smiles");
-        // fall back to the top non-directory result only if it ALSO name-matches — otherwise
-        // treat as "no official site found" rather than guessing a stranger's domain.
-        let cand = null;
-        for (const r of nonDir) { try { if (domainMatchesName(new URL(r.url).hostname, name)) { cand = r; break; } } catch (e) {} }
-        return res.status(200).json({ provider, website: cand ? cand.url : '', matched: !!cand, results: results.slice(0, 6) });
+        // RANK candidates instead of taking the first name-match: a domain containing the full
+        // concatenated business name (namastetogether.com for "Namaste Together") must beat a
+        // single-shared-word match (namasteforcompassion.com — a different org). Seen in the wild.
+        const words = name.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length >= 4 && !/^(and|the|inc|llc|shop|store|group|center|company|services?)$/.test(w));
+        const concat = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        let cand = null, best = 0;
+        for (const r of nonDir) {
+          try {
+            const host = new URL(r.url).hostname.toLowerCase().replace(/^www\./, '').split('.')[0];
+            let score = words.filter((w) => host.includes(w)).length;
+            if (concat.length >= 8 && host.includes(concat)) score += 3;
+            if (score > best) { best = score; cand = r; }
+          } catch (e) {}
+        }
+        return res.status(200).json({ provider, website: cand ? cand.url : '', matched: !!cand, confidence: best >= 2 ? 'high' : (best === 1 ? 'low' : 'none'), results: results.slice(0, 6) });
       }
       return res.status(200).json({ provider, results: results.slice(0, Math.min(Number(b.limit) || 10, 20)) });
     }

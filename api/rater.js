@@ -144,9 +144,15 @@ module.exports = async (req, res) => {
     : pct >= 75 ? 'Needs revision (75-84)' : pct >= 71 ? 'Borderline (71-74)'
     : 'QUALIFIED PROSPECT — significant issues (<=70)';
 
+  // JS-rendered sites (React/Wix/etc.) serve a near-empty HTML shell — content checks
+  // (privacy link, form, h1) may be FALSE findings because the real DOM renders client-side.
+  const visibleWords = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length;
+  const jsShell = visibleWords < 60 && /<script/i.test(html);
+
   return res.status(200).json({
     url: final, draft, mechanical_score: pct, band, prospect: pct <= 70,
     findings: findings.sort((a, b) => b.points_lost - a.points_lost),
-    note: 'Mechanical checks only. A full XENON Studio review adds strategy, brand, design, and content judgment — this score is the floor, not the whole audit.'
+    jsRendered: jsShell || undefined,
+    note: (jsShell ? '⚠ This site renders client-side (JS shell) — content findings (privacy/form/h1) may be false; verify in a browser before quoting them in a pitch. SEO findings remain valid: search engines see the same thin shell. ' : '') + 'Mechanical checks only. A full XENON Studio review adds strategy, brand, design, and content judgment — this score is the floor, not the whole audit.'
   });
 };
