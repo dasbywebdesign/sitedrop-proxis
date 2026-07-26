@@ -75,6 +75,7 @@ module.exports = async (req, res) => {
         '  (translucent bg, backdrop-blur, subtle border), a quote icon, italic serif quotes, and a star rating row.',
         '• BUTTON SHAPE matches the brand personality: SHARP squared (rounded-none/rounded-md), uppercase, bold, with a hover COLOR-INVERSION (e.g. black→signature-color) for automotive/industrial/trades/fitness; soft rounded-full pills for wellness/beauty/food/kids. Pick ONE and use it consistently.',
         '• BRANDED DEPTH — layer at least 3 of: an offset solid color block sitting behind the hero/feature image; an oversized faint outline circle bleeding off a section edge; a floating badge/info card overlapping an image corner; a per-section texture (dot-grid or 45° stripes at ~5% opacity); a thin multi-color accent bar across the top of a dark section; numbered process steps joined by a gradient connector line. This layering is what separates a real site from a flat template.',
+        '  MEDIA CLEARANCE: an image may NEVER cover text. Never pull an in-flow image over an adjacent section with negative margins; if an image intentionally overlaps a section boundary, the receiving section MUST carry matching extra top padding so its text clears the image at every breakpoint.',
         '  OVERLAP RULE: if the hero has a full-bleed photographic background, the next section must NOT overlap/pull up into the hero (no negative margins into a photo hero) — people in the hero photo will collide with the overlapping card and look broken. Use the overlap device only over solid-color or gradient sections.',
         '  DECOR RULES (breaking these wrecks the layout): every decorative circle/blob/block MUST be absolute-positioned inside a relative parent with pointer-events-none and a negative z-index — NEVER in the normal document flow where it pushes real content. Every floating badge/info card MUST contain real visible content (icon + text) — never output an empty card.',
         '• CARDS rounded (match button family), tasteful shadows, smooth scroll, and subtle hover transitions (lift + border/color change) everywhere.',
@@ -221,6 +222,15 @@ module.exports = async (req, res) => {
       html = html.replace(/<div class="[^"]*absolute[^"]*(?:bg-|backdrop-blur)[^"]*"[^>]*>(?:\s|<i[^>]*><\/i>|<div[^>]*>\s*<\/div>)*<\/div>/gi, '');
       //   • Pill CTAs must never overflow their own background.
       html = html.replace(/<\/head>/i, '<style>a[class*="rounded-full"],button[class*="rounded-full"]{white-space:nowrap;width:auto;max-width:100%}</style></head>');
+
+      // 4b3) NEGATIVE-MARGIN CAP: in-flow elements pulled >=3rem over their neighbors (-mt-12/-mb-16/…)
+      //   cover adjacent text at some breakpoint (seen: hero image over the services heading).
+      //   Absolutely-positioned elements keep their offsets; in-flow pulls are capped at -8 (2rem).
+      html = html.replace(/class="([^"]+)"/g, (m, cls) => {
+        if (/\babsolute\b|\bfixed\b/.test(cls)) return m;
+        const capped = cls.replace(/-m([tb])-(?:1[2-9]|[2-9]\d)\b/g, '-m$1-8').replace(/-m([tb])-\[[^\]]+\]/g, '-m$1-8');
+        return capped === cls ? m : 'class="' + capped + '"';
+      });
 
       // 4c) AI-IMAGERY DISCLOSURE: when the page uses AI-generated images (our pollinations /
       //     blob-stored gpt-image / fal renders), state it plainly. Cheap trust + future-proofs
