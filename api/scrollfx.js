@@ -33,7 +33,7 @@ async function persistVideo(url) {
     return blob.url;
   } catch (_) { return url; }
 }
-const VIDEO_MODEL = () => process.env.SFX_VIDEO_MODEL || 'fal-ai/kling-video/v2.1/standard/image-to-video';
+const VIDEO_MODEL = () => process.env.SFX_VIDEO_MODEL || 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video'; // turbo default: standard's queue hit 15+ min
 const TAIL_MODEL = () => process.env.SFX_TAIL_MODEL || 'fal-ai/kling-video/v1.6/pro/image-to-video';
 const EDIT_MODEL = () => process.env.SFX_EDIT_MODEL || 'fal-ai/flux-pro/kontext';
 
