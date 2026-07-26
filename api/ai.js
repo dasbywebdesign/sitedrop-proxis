@@ -95,6 +95,7 @@ module.exports = async (req, res) => {
         '2. Hero (per the HERO spec above) with the business name/tagline and two CTAs; the first CTA is Call (tel:) if a phone exists.',
         '3. Trust bar: 3-5 small badge/stat cards (e.g. license #, "Fully Insured", star rating if given, years, "24/7"). Use real given data only.',
         '4. Services: a grid of 3-6 cards, each with a Lucide icon, a real service name, and one specific benefit sentence.',
+        '   SERVICES AUTHENTICITY: if the provided services list is missing or reads as generic placeholders ("Consultation", "Core Service", "Premium Package", "Support"), REPLACE it with the real industry-standard service menu for this business type — e.g. tire shop → tire sales & installation (major brands), TPMS service, flat repair, rotation & balancing, wheel alignment; dentist → cleanings & exams, fillings, crowns, whitening, emergency care; HVAC → AC repair, furnace installation, duct cleaning, seasonal tune-ups. Use the services a real customer of this business type would expect to find.',
         '5. "How it works": a numbered 3-4 step process (01–04) with short titles and descriptions.',
         '6. About/trust: a two-column section building credibility with specific, believable local detail.',
         '7. Testimonials: 2-3 real-sounding reviews with names; if a rating is given, show it prominently.',
@@ -196,6 +197,18 @@ module.exports = async (req, res) => {
       // 4b) Tailwind uses "gray", not "grey" — the model sometimes writes bg-grey-100 etc., which is
       //     an unknown class that renders as no background (flat white sections). Normalize.
       html = html.replace(/\b(bg|text|border|from|via|to|ring|divide|placeholder|fill|stroke)-grey-/g, '$1-gray-');
+
+      // 4c) AI-IMAGERY DISCLOSURE: when the page uses AI-generated images (our pollinations /
+      //     blob-stored gpt-image / fal renders), state it plainly. Cheap trust + future-proofs
+      //     against AI-transparency rules; injected into the privacy section (or footer).
+      const hasAiImg = /image\.pollinations\.ai|public\.blob\.vercel-storage\.com\/sitedrop-img|fal\.media/i.test(html);
+      const saysAi = /AI[-\s]generated|artificial intelligence/i.test(html);
+      if (hasAiImg && !saysAi) {
+        const line = '<p style="font-size:12px;opacity:.65;margin-top:6px">Some imagery on this site is AI-generated for illustrative purposes.</p>';
+        if (/id="privacy"[\s\S]*?<\/section>/i.test(html)) html = html.replace(/(id="privacy"[\s\S]*?)(<\/section>)/i, (m, a, b) => a + line + b);
+        else if (/<\/footer>/i.test(html)) html = html.replace(/<\/footer>/i, line + '</footer>');
+        else html = html.replace(/<\/body>/i, line + '</body>');
+      }
 
       // 5) FONT INSURANCE: the #1 "looks like a template" tell is a page that renders in system Arial.
       //    Two failure modes: (a) the model names fonts in its Tailwind config / CSS but never LOADS

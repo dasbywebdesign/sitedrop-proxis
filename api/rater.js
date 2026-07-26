@@ -60,7 +60,7 @@ module.exports = async (req, res) => {
   const low = html.toLowerCase();
   const NOW = new Date().getFullYear();
   const findings = [];
-  let score = 0, total = 112;
+  let score = 0, total = 115;
   const check = (pts, ok, issue, fix) => { if (ok) score += pts; else findings.push({ points_lost: pts, issue, fix }); };
 
   // security (30) — skipped for unpublished drafts (no server yet)
@@ -108,6 +108,14 @@ module.exports = async (req, res) => {
   // privacy (5) — mandated by the XENON site-audit; matters once a site collects any visitor info
   check(5, /privacy[\s-]*policy/i.test(html) || /href=["'][^"']*privac/i.test(html),
     'No privacy policy', 'Add a privacy policy page (legally expected once a site collects visitor info via forms/analytics)');
+
+  // AI-imagery disclosure (3) — trust + emerging AI-transparency rules; graded only when AI images are present
+  const aiImg = /image\.pollinations\.ai|public\.blob\.vercel-storage\.com\/sitedrop-img|fal\.media/i.test(html);
+  if (aiImg) {
+    check(3, /AI[-\s]generated|artificial intelligence/i.test(html),
+      'AI-generated imagery is used but not disclosed anywhere',
+      'Add a short disclosure line (e.g. "Some imagery on this site is AI-generated") in the footer or privacy section');
+  } else total -= 3;
 
   // freshness / staleness (7) — a neglected-looking site quietly loses customers' trust
   const cpy = (html.match(/(?:\u00a9|&copy;|copyright)\s*(?:&\w+;\s*)?((?:19|20)\d{2})/i) || [])[1];
