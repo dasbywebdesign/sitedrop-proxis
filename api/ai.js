@@ -22,8 +22,12 @@
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', process.env.ALLOW_ORIGIN || '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-dasby-key');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  // Shared-secret gate: once DASBY_KEY is set in Vercel env, every call must carry the same
+  // x-dasby-key header (the tool sends it from Settings). Blocks drive-by credit burn.
+  if (process.env.DASBY_KEY && req.headers['x-dasby-key'] !== process.env.DASBY_KEY) return res.status(401).json({ error: 'unauthorized' });
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
 
@@ -71,6 +75,7 @@ module.exports = async (req, res) => {
         '  (translucent bg, backdrop-blur, subtle border), a quote icon, italic serif quotes, and a star rating row.',
         '• BUTTON SHAPE matches the brand personality: SHARP squared (rounded-none/rounded-md), uppercase, bold, with a hover COLOR-INVERSION (e.g. black→signature-color) for automotive/industrial/trades/fitness; soft rounded-full pills for wellness/beauty/food/kids. Pick ONE and use it consistently.',
         '• BRANDED DEPTH — layer at least 3 of: an offset solid color block sitting behind the hero/feature image; an oversized faint outline circle bleeding off a section edge; a floating badge/info card overlapping an image corner; a per-section texture (dot-grid or 45° stripes at ~5% opacity); a thin multi-color accent bar across the top of a dark section; numbered process steps joined by a gradient connector line. This layering is what separates a real site from a flat template.',
+        '  DECOR RULES (breaking these wrecks the layout): every decorative circle/blob/block MUST be absolute-positioned inside a relative parent with pointer-events-none and a negative z-index — NEVER in the normal document flow where it pushes real content. Every floating badge/info card MUST contain real visible content (icon + text) — never output an empty card.',
         '• CARDS rounded (match button family), tasteful shadows, smooth scroll, and subtle hover transitions (lift + border/color change) everywhere.',
         '• MOTION: add a .animate-on-scroll fade-up revealed by an IntersectionObserver, and honor prefers-reduced-motion.',
         '',
@@ -197,6 +202,24 @@ module.exports = async (req, res) => {
       // 4b) Tailwind uses "gray", not "grey" — the model sometimes writes bg-grey-100 etc., which is
       //     an unknown class that renders as no background (flat white sections). Normalize.
       html = html.replace(/\b(bg|text|border|from|via|to|ring|divide|placeholder|fill|stroke)-grey-/g, '$1-gray-');
+
+      // 4b2) LAYOUT SAFETY for prompt-induced decor (intermittent model failures seen in the wild):
+      //   • Decorative outline circles/blobs generated WITHOUT `absolute` land in the normal flow
+      //     and shove CTAs/rows apart. Force any large rounded-full decor div out of the flow.
+      html = html.replace(/<div class="([^"]*rounded-full[^"]*)"([^>]*)>\s*<\/div>/gi, (m, cls, rest) => {
+        const large = /w-(4[08]|56|64|72|80|96)|h-(4[08]|56|64|72|80|96)|w-\[[2-9]\d{2,}px\]/.test(cls);
+        if (!large) return m;
+        let c = cls;
+        if (!/\babsolute\b|\bfixed\b/.test(c)) c = 'absolute ' + c;
+        if (!/pointer-events-none/.test(c)) c += ' pointer-events-none';
+        if (!/-z-|z-\[-/.test(c)) c += ' -z-10';
+        return '<div class="' + c + '"' + rest + '></div>';
+      });
+      //   • Floating badge cards sometimes render EMPTY (a bare white box over the photo). Remove
+      //     any absolutely-positioned card with a background but no real content.
+      html = html.replace(/<div class="[^"]*absolute[^"]*(?:bg-|backdrop-blur)[^"]*"[^>]*>(?:\s|<i[^>]*><\/i>|<div[^>]*>\s*<\/div>)*<\/div>/gi, '');
+      //   • Pill CTAs must never overflow their own background.
+      html = html.replace(/<\/head>/i, '<style>a[class*="rounded-full"],button[class*="rounded-full"]{white-space:nowrap;width:auto;max-width:100%}</style></head>');
 
       // 4c) AI-IMAGERY DISCLOSURE: when the page uses AI-generated images (our pollinations /
       //     blob-stored gpt-image / fal renders), state it plainly. Cheap trust + future-proofs

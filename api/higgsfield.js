@@ -82,8 +82,12 @@ function generateBuf(model, prompt, portrait, quality) {
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', process.env.ALLOW_ORIGIN || '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-dasby-key');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  // Shared-secret gate: once DASBY_KEY is set in Vercel env, every call must carry the same
+  // x-dasby-key header (the tool sends it from Settings). Blocks drive-by credit burn.
+  if (process.env.DASBY_KEY && req.headers['x-dasby-key'] !== process.env.DASBY_KEY) return res.status(401).json({ error: 'unauthorized' });
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   try {
