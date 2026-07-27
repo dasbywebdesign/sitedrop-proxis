@@ -33,13 +33,13 @@ module.exports = async (req, res) => {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-    const task = ['edit', 'fullpage'].includes(body.task) ? body.task : 'copy';
+    const task = ['edit', 'fullpage', 'tweak'].includes(body.task) ? body.task : 'copy';
     const biz = body.business || {};
     const base = (process.env.OPENAI_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
     const model = process.env.OPENAI_MODEL || 'gpt-4o';
 
     // ---- AI full-page: the model authors a complete, bespoke, ADA-compliant HTML page ----
-    if (task === 'fullpage') {
+    if (task === 'fullpage' || task === 'tweak') {
       const sysFP = [
         'You are an award-winning web designer. Output ONLY a complete, self-contained HTML5 document',
         '(<!DOCTYPE html> … </html>) for this local business\'s landing page — no markdown fences, no commentary.',
@@ -135,8 +135,11 @@ module.exports = async (req, res) => {
         'DEPTH & MOTION: layer soft blurred color-blob glows (blur-3xl, low opacity) behind hero/about/contact for calm brands, or hard geometric shapes for bold brands. Add a .animate-on-scroll fade-up (translateY+opacity) revealed by an IntersectionObserver, honoring prefers-reduced-motion. Hover-lift every card.',
         'Write MORE copy per section (2–4 real, specific sentences) with local detail and named packages/prices. Depth, polish, and length over brevity.',
       ].join('\n');
-      const sysFinal = body.multipage ? (sysFP + '\n\n' + MULTIPAGE) : (body.premium ? (sysFP + '\n\n' + FLAGSHIP) : sysFP);
-      const userFP = 'BUSINESS:\n' + JSON.stringify(biz, null, 2) +
+      const TWEAK_SYS = 'You are a meticulous web developer editing an EXISTING finished page. Apply ONLY the requested change. Keep every other element, style, image, and line of the document IDENTICAL — do not redesign, rename, reorder, or "improve" anything that was not asked for. Return ONLY the complete updated HTML document (<!DOCTYPE html> … </html>), no commentary.';
+      const sysFinal = task === 'tweak' ? TWEAK_SYS : (body.multipage ? (sysFP + '\n\n' + MULTIPAGE) : (body.premium ? (sysFP + '\n\n' + FLAGSHIP) : sysFP));
+      const userFP = task === 'tweak'
+        ? ('CURRENT PAGE HTML:\n' + String(body.html || '').slice(0, 120000) + '\n\nCHANGE REQUEST (apply this and nothing else): ' + String(body.instruction || ''))
+        : 'BUSINESS:\n' + JSON.stringify(biz, null, 2) +
         '\nINDUSTRY: ' + String(body.industry || '') +
         '\nIMAGE URLS (use these for the hero/gallery if present): ' + JSON.stringify(body.images || []) +
         '\nREFINEMENT INSTRUCTION (optional): ' + String(body.instruction || '');
