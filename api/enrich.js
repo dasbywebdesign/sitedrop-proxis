@@ -133,6 +133,10 @@ module.exports = async (req, res) => {
         nav: grabAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, 1).filter((t) => /^[A-Za-z][A-Za-z &''\-]{1,28}$/.test(t)).slice(0, 12),
         phone: ((text.match(/(\+?1?[\s.\-]?\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4})/) || [])[1] || ''),
         email: ((text.match(/[\w.\-]+@[\w.\-]+\.\w{2,}/) || [])[0] || ''),
+        logo: (function(){ try{
+          const m = clean.match(/<img[^>]*class="[^"]*logo[^"]*"[^>]*src="([^"]+)"/i) || clean.match(/<img[^>]*src="([^"]+)"[^>]*class="[^"]*logo[^"]*"/i) || clean.match(/<img[^>]*alt="[^"]*logo[^"]*"[^>]*src="([^"]+)"/i) || clean.match(/<img[^>]*src="([^"']*logo[^"']*)"/i);
+          return m ? new URL(m[1], base2.href).href : '';
+        }catch(e){ return ''; } })(),
         socials: extractSocials(html),
         hasShop: /\b(shop|cart|checkout|add to cart|store)\b/i.test(text),
         hasBooking: /\b(book(ing)?( now| online)?|schedule|appointment|reserve)\b/i.test(text),
