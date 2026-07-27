@@ -305,7 +305,7 @@ module.exports = async (req, res) => {
           /<img\b/i.test(hMatch[0]) ||
           /class="[^"]*\blogo\b/i.test(hMatch[0]) ||
           /data-lucide="(?!menu)[a-z][a-z-]*"/i.test(hMatch[0]) ||        // any icon logo other than the hamburger
-          />\s*[A-Z]{2,4}\s*</.test(hMatch[0]) ||                          // a standalone monogram like "GF"/"WT"
+          />\s*[A-Z]{1,4}\s*</.test(hMatch[0]) ||                          // a standalone monogram like "N"/"GF"/"WT"
           (initials && new RegExp('>\\s*' + initials + '\\s*<').test(hMatch[0]))
         );
         if (hMatch && nameStr && !hasMark && hMatch[0].indexOf(nameStr) >= 0) {
