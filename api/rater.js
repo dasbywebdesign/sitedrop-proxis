@@ -156,7 +156,7 @@ module.exports = async (req, res) => {
   let speed = null;
   if (!draft) {
     try {
-      const pr = await fetch('https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=' + encodeURIComponent(final) + '&category=performance&strategy=mobile', { signal: AbortSignal.timeout(35000) });
+      const pr = await fetch('https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=' + encodeURIComponent(final) + '&category=performance&strategy=mobile' + ((process.env.PSI_KEY || process.env.GOOGLE_PLACES_KEY) ? ('&key=' + (process.env.PSI_KEY || process.env.GOOGLE_PLACES_KEY)) : ''), { signal: AbortSignal.timeout(35000) });
       const pj = await pr.json();
       const lr = pj && pj.lighthouseResult;
       if (lr && lr.categories && lr.categories.performance) {
