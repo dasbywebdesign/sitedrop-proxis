@@ -82,6 +82,15 @@ module.exports = async (req, res) => {
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
 
+  // Anonymous-use throttle: the public grader is open by design, but cap burst abuse
+  // (PSI quota + history-blob spam). Requests carrying the DASBY_KEY are exempt.
+  const keyed = process.env.DASBY_KEY && req.headers['x-dasby-key'] === process.env.DASBY_KEY;
+  if (!keyed && body.op !== 'activity') {
+    global.__rateLog = (global.__rateLog || []).filter((t) => Date.now() - t < 3600000);
+    if (global.__rateLog.length >= 40) return res.status(429).json({ error: 'busy — try again in a little while' });
+    global.__rateLog.push(Date.now());
+  }
+
   // Private grader-activity log (Vito only — requires DASBY_KEY): domains graded + score trend.
   if (body.op === 'activity') {
     if (!process.env.DASBY_KEY || req.headers['x-dasby-key'] !== process.env.DASBY_KEY) return res.status(401).json({ error: 'unauthorized' });
