@@ -29,6 +29,32 @@ async function head(url) {
   }
 }
 
+const MEANINGS = [
+  [/content-security-policy|x-content-type|clickjack|x-frame|referrer-policy|permissions-policy|hsts|security header/i, 'A standard browser security setting is missing — browsers and Google quietly trust the site less.'],
+  [/https/i, 'The browser marks this site "Not secure" — many visitors leave immediately.'],
+  [/contact form|lead capture/i, 'Visitors after hours have no way to reach the business — those leads call a competitor instead.'],
+  [/privacy policy/i, 'California law expects a privacy policy once a site collects names or emails; customers look for it too.'],
+  [/h1 count|heading/i, 'The page doesn\u2019t clearly tell Google what it\u2019s about, which hurts local search ranking.'],
+  [/structured data|json-ld/i, 'Google can\u2019t read the business details (hours, location, services) — losing rich search results competitors can get.'],
+  [/meta description|title missing|title.*weak/i, 'The text Google shows under the business name in search results is missing or weak — that line is the first impression.'],
+  [/open graph/i, 'Shared links (texts, Facebook) show no preview image or description — links look broken or spammy.'],
+  [/robots|sitemap/i, 'Google\u2019s crawler has no map of the site — pages get found slower or not at all.'],
+  [/favicon/i, 'The browser-tab icon is missing — a small polish signal customers subconsciously notice.'],
+  [/copyright|out of date|abandoned/i, 'The footer shows an old year — to visitors the business looks neglected or possibly closed.'],
+  [/broken|missing \(removed/i, 'Some images no longer load — like a shop window with empty frames.'],
+  [/viewport|phones/i, 'The site doesn\u2019t adapt to phones — where most local searches happen.'],
+  [/alt text/i, 'Images lack descriptions — hurts accessibility compliance (ADA exposure) and Google ranking.'],
+  [/lang attribute/i, 'A basic accessibility setting is missing — screen readers and search engines can\u2019t identify the language.'],
+  [/skip link/i, 'Keyboard and screen-reader users can\u2019t skip to the content — an accessibility (ADA) basic.'],
+  [/autoplay/i, 'Media plays automatically — visitors on phones find it annoying and data-hungry.'],
+  [/spam protection|honeypot/i, 'The contact form has no bot protection — the inbox fills with spam and real leads get lost.'],
+  [/heavy|weight/i, 'The page is slow to load — phone visitors give up before it finishes.'],
+  [/placeholder|coming soon|filler/i, 'Leftover placeholder text is still live — it reads as unfinished and unprofessional.'],
+  [/ai[- ]generated|disclosure/i, 'AI-generated imagery isn\u2019t disclosed — an easy transparency and trust win.'],
+  [/encoding|mojibake/i, 'Text renders as garbage characters in places — looks broken to visitors.'],
+];
+function meaningFor(issue) { for (const [re, m] of MEANINGS) { if (re.test(issue)) return m; } return 'A technical issue that quietly costs trust, search ranking, or leads.'; }
+
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', process.env.ALLOW_ORIGIN || '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
@@ -153,7 +179,7 @@ module.exports = async (req, res) => {
 
   return res.status(200).json({
     url: final, draft, mechanical_score: pct, band, prospect: pct <= 70, themeColor: themeColor || undefined,
-    findings: findings.sort((a, b) => b.points_lost - a.points_lost),
+    findings: findings.sort((a, b) => b.points_lost - a.points_lost).map((f) => ({ ...f, meaning: meaningFor(f.issue) })),
     jsRendered: jsShell || undefined,
     note: (jsShell ? '⚠ This site renders client-side (JS shell) — content findings (privacy/form/h1) may be false; verify in a browser before quoting them in a pitch. SEO findings remain valid: search engines see the same thin shell. ' : '') + 'Mechanical checks only. A full XENON Studio review adds strategy, brand, design, and content judgment — this score is the floor, not the whole audit.'
   });
