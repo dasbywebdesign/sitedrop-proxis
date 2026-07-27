@@ -121,13 +121,12 @@ module.exports = async (req, res) => {
   if (!draft && !url) return res.status(400).json({ error: 'url or html required' });
   if (!draft && !/^https?:\/\//i.test(url)) url = 'https://' + url;
 
-  let r = null, html, final, h;
+  let r = null, html, final, h, apexBroken = false;
   if (draft) {
     html = body.html.slice(0, 1_500_000);
     final = '(unpublished draft)';
     h = { has: () => false, get: () => '' };
   } else {
-    let apexBroken = false;
     try {
       r = await fetch(url, { headers: UA, redirect: 'follow', signal: AbortSignal.timeout(15000) });
       html = (await r.text()).slice(0, 1_500_000);
