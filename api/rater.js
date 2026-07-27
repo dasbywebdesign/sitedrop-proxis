@@ -81,6 +81,31 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+
+  // Private grader-activity log (Vito only — requires DASBY_KEY): domains graded + score trend.
+  if (body.op === 'activity') {
+    if (!process.env.DASBY_KEY || req.headers['x-dasby-key'] !== process.env.DASBY_KEY) return res.status(401).json({ error: 'unauthorized' });
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) return res.status(200).json({ ok: false, error: 'no storage' });
+    try {
+      const lr = await fetch('https://blob.vercel-storage.com/?prefix=rater-history%2F&limit=500', { headers: { Authorization: 'Bearer ' + token } });
+      const lj = await lr.json();
+      const out = [];
+      for (const b of (lj.blobs || []).slice(0, 200)) {
+        try {
+          const rr = await fetch(b.url, { headers: { Authorization: 'Bearer ' + token } });
+          const hist = await rr.json();
+          if (!Array.isArray(hist) || !hist.length) continue;
+          const first = hist[0], last = hist[hist.length - 1];
+          out.push({ domain: (b.pathname.split('/').pop() || '').replace('.json', ''), rates: hist.length,
+            firstScore: first.score, lastScore: last.score, change: last.score - first.score,
+            firstAt: first.at, lastAt: last.at });
+        } catch (e) {}
+      }
+      out.sort((a, b) => b.lastAt - a.lastAt);
+      return res.status(200).json({ ok: true, sites: out });
+    } catch (e) { return res.status(200).json({ ok: false, error: e.message }); }
+  }
   const draft = typeof body.html === 'string' && body.html.length > 0;
   let url = (body.url || '').trim();
   if (!draft && !url) return res.status(400).json({ error: 'url or html required' });
