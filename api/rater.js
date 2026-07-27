@@ -86,7 +86,7 @@ module.exports = async (req, res) => {
   const low = html.toLowerCase();
   const NOW = new Date().getFullYear();
   const findings = [];
-  let score = 0, total = 115;
+  let score = 0, total = 125;
   const check = (pts, ok, issue, fix) => { if (ok) score += pts; else findings.push({ points_lost: pts, issue, fix }); };
 
   // security (30) — skipped for unpublished drafts (no server yet)
@@ -152,6 +152,36 @@ module.exports = async (req, res) => {
     'Placeholder text, "coming soon", or filler still live on the site',
     'Replace leftover placeholder/coming-soon content with real copy');
 
+  // speed (6) — Google PageSpeed Insights (mobile). The #1 signal owners have heard of.
+  let speed = null;
+  if (!draft) {
+    try {
+      const pr = await fetch('https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=' + encodeURIComponent(final) + '&category=performance&strategy=mobile', { signal: AbortSignal.timeout(35000) });
+      const pj = await pr.json();
+      const lr = pj && pj.lighthouseResult;
+      if (lr && lr.categories && lr.categories.performance) {
+        speed = { score: Math.round((lr.categories.performance.score || 0) * 100),
+                  lcp: (lr.audits && lr.audits['largest-contentful-paint'] && lr.audits['largest-contentful-paint'].displayValue) || '',
+                  cls: (lr.audits && lr.audits['cumulative-layout-shift'] && lr.audits['cumulative-layout-shift'].displayValue) || '' };
+        check(6, speed.score >= 50, `Slow on phones — Google performance score ${speed.score}/100 (LCP ${speed.lcp})`, 'Compress images, defer scripts, reduce page weight');
+      } else total -= 6;
+    } catch (e) { total -= 6; }
+  } else total -= 6;
+
+  // link health (4) — sample internal links for 404s
+  if (!draft) {
+    try {
+      const hosts = new URL(final).hostname;
+      const linkSrcs = [...html.matchAll(/<a\b[^>]*?href=["']([^"'#]+)["']/gi)].map((m) => m[1])
+        .filter((u) => !/^(mailto:|tel:|javascript:)/i.test(u))
+        .map((u) => { try { return new URL(u, final).href; } catch { return null; } })
+        .filter((u) => u && new URL(u).hostname === hosts).slice(0, 5);
+      let deadLinks = 0;
+      for (const u of linkSrcs) { try { if ((await head(u)) >= 400) deadLinks++; } catch { deadLinks++; } }
+      check(4, linkSrcs.length === 0 || deadLinks === 0, `${deadLinks}/${linkSrcs.length} sampled links are broken (404s)`, 'Fix or remove dead links — they frustrate visitors and hurt SEO');
+    } catch (e) { total -= 4; }
+  } else total -= 4;
+
   // media health (10)
   if (draft) { total -= 6; } else {
   const srcs = [...html.matchAll(/<img\b[^>]*?src=["']([^"']+)/gi)].map(m => m[1]).filter(s => !s.startsWith('data:')).slice(0, 5);
@@ -180,7 +210,7 @@ module.exports = async (req, res) => {
   return res.status(200).json({
     url: final, draft, mechanical_score: pct, band, prospect: pct <= 70, themeColor: themeColor || undefined,
     findings: findings.sort((a, b) => b.points_lost - a.points_lost).map((f) => ({ ...f, meaning: meaningFor(f.issue) })),
-    jsRendered: jsShell || undefined,
+    jsRendered: jsShell || undefined, speed: speed || undefined,
     note: (jsShell ? '⚠ This site renders client-side (JS shell) — content findings (privacy/form/h1) may be false; verify in a browser before quoting them in a pitch. SEO findings remain valid: search engines see the same thin shell. ' : '') + 'Mechanical checks only. A full XENON Studio review adds strategy, brand, design, and content judgment — this score is the floor, not the whole audit.'
   });
 };
