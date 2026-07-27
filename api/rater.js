@@ -69,6 +69,7 @@ const MEANINGS = [
   [/heavy|weight/i, 'The page is slow to load — phone visitors give up before it finishes.'],
   [/placeholder|coming soon|filler/i, 'Leftover placeholder text is still live — it reads as unfinished and unprofessional.'],
   [/ai[- ]generated|disclosure/i, 'AI-generated imagery isn\u2019t disclosed — an easy transparency and trust win.'],
+  [/doesn\u2019t load|www\./i, 'Anyone typing the address the other way hits an error page and assumes the business is gone.'],
   [/encoding|mojibake/i, 'Text renders as garbage characters in places — looks broken to visitors.'],
 ];
 function meaningFor(issue) { for (const [re, m] of MEANINGS) { if (re.test(issue)) return m; } return 'A technical issue that quietly costs trust, search ranking, or leads.'; }
@@ -126,11 +127,21 @@ module.exports = async (req, res) => {
     final = '(unpublished draft)';
     h = { has: () => false, get: () => '' };
   } else {
+    let apexBroken = false;
     try {
       r = await fetch(url, { headers: UA, redirect: 'follow', signal: AbortSignal.timeout(15000) });
       html = (await r.text()).slice(0, 1_500_000);
     } catch (e) {
-      return res.status(200).json({ url, error: 'unreachable: ' + (e && e.message) });
+      // Common real-world break: apex dead but www works (or vice versa). Retry the toggled host.
+      try {
+        const u2 = new URL(url);
+        u2.hostname = u2.hostname.startsWith('www.') ? u2.hostname.slice(4) : 'www.' + u2.hostname;
+        r = await fetch(u2.href, { headers: UA, redirect: 'follow', signal: AbortSignal.timeout(15000) });
+        html = (await r.text()).slice(0, 1_500_000);
+        apexBroken = true; url = u2.href;
+      } catch (e2) {
+        return res.status(200).json({ url, error: 'unreachable: ' + (e && e.message) });
+      }
     }
     final = r.url || url;
     h = r.headers;
@@ -138,7 +149,7 @@ module.exports = async (req, res) => {
   const low = html.toLowerCase();
   const NOW = new Date().getFullYear();
   const findings = [];
-  let score = 0, total = 125;
+  let score = 0, total = 130;
   const check = (pts, ok, issue, fix) => { if (ok) score += pts; else findings.push({ points_lost: pts, issue, fix }); };
 
   // security (30) — skipped for unpublished drafts (no server yet)
@@ -203,6 +214,12 @@ module.exports = async (req, res) => {
   check(3, !/(coming soon|under construction|lorem ipsum|placeholder text|your text here|example\.com)/i.test(low),
     'Placeholder text, "coming soon", or filler still live on the site',
     'Replace leftover placeholder/coming-soon content with real copy');
+
+  // reachability (5) — one hostname variant dead (apex vs www) loses everyone who types it
+  if (!draft) {
+    check(5, !apexBroken, 'One version of the address doesn\u2019t load (with vs without \u201cwww.\u201d) \u2014 only ' + (final.includes('//www.') ? 'the www. version works' : 'the bare domain works'),
+      'Fix DNS/SSL for the failing variant or 301-redirect it to the working one');
+  } else total -= 5;
 
   // speed (6) — Google PageSpeed Insights (mobile). The #1 signal owners have heard of.
   let speed = null;
