@@ -15,6 +15,24 @@
 // Builder chat:  rater proxy https://<project>.vercel.app/api/rater
 
 const UA = { 'User-Agent': 'Mozilla/5.0 (XENON-Rater/1.0)' };
+const { put } = require('@vercel/blob');
+
+// Score history per domain (last 12 rates) — enables "63 → 92 since April, here's what fixed it".
+async function historyFor(host) {
+  const token = process.env.BLOB_READ_WRITE_TOKEN; if (!token) return null;
+  try {
+    const r = await fetch('https://blob.vercel-storage.com/?prefix=' + encodeURIComponent('rater-history/' + host + '.json') + '&limit=1', { headers: { Authorization: 'Bearer ' + token } });
+    const j = await r.json();
+    const b = j && j.blobs && j.blobs[0];
+    if (!b) return [];
+    const rr = await fetch(b.url, { headers: { Authorization: 'Bearer ' + token } });
+    return (await rr.json()) || [];
+  } catch (e) { return null; }
+}
+async function saveHistory(host, entries) {
+  const token = process.env.BLOB_READ_WRITE_TOKEN; if (!token) return;
+  try { await put('rater-history/' + host + '.json', JSON.stringify(entries.slice(-12)), { access: 'public', contentType: 'application/json', token, addRandomSuffix: false, allowOverwrite: true }); } catch (e) {}
+}
 
 async function head(url) {
   try {
@@ -207,8 +225,31 @@ module.exports = async (req, res) => {
 
   const themeColor = ((html.match(/name=["']theme-color["'][^>]*content=["'](#[0-9a-fA-F]{3,8})/i) || [])[1]) || ((html.match(/(?:--(?:primary|brand|main|accent)[^:]*:\s*)(#[0-9a-fA-F]{6})/i) || [])[1]) || '';
 
+  // history + what-changed attribution
+  let history;
+  if (!draft) {
+    try {
+      const host = new URL(final).hostname.replace(/^www\./, '');
+      const past = await historyFor(host);
+      if (past !== null) {
+        const nowIssues = findings.map((f) => f.issue.replace(/\d+/g, 'N'));
+        const prev = past.length ? past[past.length - 1] : null;
+        if (prev) {
+          history = {
+            prevScore: prev.score, prevAt: prev.at, change: pct - prev.score,
+            fixed: (prev.issues || []).filter((i) => !nowIssues.includes(i)).slice(0, 6),
+            regressed: nowIssues.filter((i) => !(prev.issues || []).includes(i)).slice(0, 6),
+            rates: past.length + 1,
+          };
+        }
+        past.push({ at: Date.now(), score: pct, issues: nowIssues });
+        await saveHistory(host, past);
+      }
+    } catch (e) {}
+  }
+
   return res.status(200).json({
-    url: final, draft, mechanical_score: pct, band, prospect: pct <= 70, themeColor: themeColor || undefined,
+    url: final, draft, mechanical_score: pct, band, prospect: pct <= 70, themeColor: themeColor || undefined, history: history || undefined,
     findings: findings.sort((a, b) => b.points_lost - a.points_lost).map((f) => ({ ...f, meaning: meaningFor(f.issue) })),
     jsRendered: jsShell || undefined, speed: speed || undefined,
     note: (jsShell ? '⚠ This site renders client-side (JS shell) — content findings (privacy/form/h1) may be false; verify in a browser before quoting them in a pitch. SEO findings remain valid: search engines see the same thin shell. ' : '') + 'Mechanical checks only. A full XENON Studio review adds strategy, brand, design, and content judgment — this score is the floor, not the whole audit.'
