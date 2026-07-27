@@ -41,6 +41,10 @@ module.exports = async (req, res) => {
   }
 
   try {
+    if (op === 'versions') {
+      const blobs = await list();
+      return res.status(200).json({ ok: true, versions: blobs.slice(0, KEEP).map((b) => ({ at: Number((b.pathname.split('/').pop() || '').replace('.json', '')) || 0, size: b.size })) });
+    }
     if (op === 'save') {
       const payload = JSON.stringify(body.state || {});
       if (payload.length > 4_000_000) return res.status(413).json({ ok: false, error: 'workspace too large (4MB max)' });
@@ -60,6 +64,14 @@ module.exports = async (req, res) => {
     }
 
     if (op === 'load') {
+      if (body.at) {
+        const target = `${prefix}${body.at}.json`;
+        const blobs0 = await list();
+        const hit = blobs0.find((b) => b.pathname === target);
+        if (!hit) return res.status(404).json({ ok: false, error: 'version not found' });
+        const rr = await fetch(hit.url, { headers: A });
+        return res.status(200).json({ ok: true, state: await rr.json(), savedAt: body.at });
+      }
       const blobs = await list();
       if (!blobs.length) return res.status(200).json({ ok: true, state: null });
       const r = await fetch(blobs[0].url, { cache: 'no-store' });
