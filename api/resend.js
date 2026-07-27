@@ -18,15 +18,14 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-dasby-key');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  // Shared-secret gate: once DASBY_KEY is set in Vercel env, every call must carry the same
-  // x-dasby-key header (the tool sends it from Settings). Blocks drive-by credit burn.
-  if (process.env.DASBY_KEY && req.headers['x-dasby-key'] !== process.env.DASBY_KEY) return res.status(401).json({ error: 'unauthorized' });
+  // Shared-secret gate — with ONE public exception: unkeyed sends addressed ONLY to the
+  // owner's own inboxes are allowed (the marketing site's contact form needs it; worst-case
+  // abuse is spamming Vito himself, capped by the throttle). Any other recipient needs the key.
+  const OWNER = ['dasbywebdesign@gmail.com', 'vitoman1977@gmail.com', 'sales@armedreality.com'];
+  const keyed = process.env.DASBY_KEY && req.headers['x-dasby-key'] === process.env.DASBY_KEY;
 
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
   if (!process.env.RESEND_API_KEY) return res.status(500).json({ ok: false, error: 'RESEND_API_KEY not set' });
-  // Email is the worst abuse case (spam sent from OUR domain) — unlike the other endpoints,
-  // sending stays HARD-LOCKED until DASBY_KEY exists. No key configured = no sends, period.
-  if (!process.env.DASBY_KEY) return res.status(503).json({ ok: false, error: 'sending locked — set the DASBY_KEY env var (and enter the same key in the tool Settings) to enable' });
 
   // Light per-instance throttle: even with the key, cap bursts (cold-start resets are fine —
   // this is belt-and-suspenders on top of the gate, not the primary defense).
@@ -38,6 +37,9 @@ module.exports = async (req, res) => {
     const norm = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map((x) => String(x).trim()).filter(Boolean);
     const to = norm(body.to);
     if (!to.length) return res.status(400).json({ ok: false, error: 'missing "to"' });
+    const allToOwner = to.concat(norm(body.bcc)).every((a) => OWNER.includes(String(a).toLowerCase()));
+    if (!keyed && !allToOwner) return res.status(401).json({ ok: false, error: 'unauthorized — external sends require the API key' });
+    if (!process.env.DASBY_KEY && !allToOwner) return res.status(503).json({ ok: false, error: 'external sending locked until DASBY_KEY is set' });
     if (to.length + norm(body.bcc).length > 3) return res.status(400).json({ ok: false, error: 'max 3 recipients per send (bulk sends are done one at a time, human-in-the-loop)' });
     global.__mailLog.push(Date.now());
     const bcc = norm(body.bcc);
