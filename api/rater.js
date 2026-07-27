@@ -149,8 +149,10 @@ module.exports = async (req, res) => {
   const visibleWords = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length;
   const jsShell = visibleWords < 60 && /<script/i.test(html);
 
+  const themeColor = ((html.match(/name=["']theme-color["'][^>]*content=["'](#[0-9a-fA-F]{3,8})/i) || [])[1]) || ((html.match(/(?:--(?:primary|brand|main|accent)[^:]*:\s*)(#[0-9a-fA-F]{6})/i) || [])[1]) || '';
+
   return res.status(200).json({
-    url: final, draft, mechanical_score: pct, band, prospect: pct <= 70,
+    url: final, draft, mechanical_score: pct, band, prospect: pct <= 70, themeColor: themeColor || undefined,
     findings: findings.sort((a, b) => b.points_lost - a.points_lost),
     jsRendered: jsShell || undefined,
     note: (jsShell ? '⚠ This site renders client-side (JS shell) — content findings (privacy/form/h1) may be false; verify in a browser before quoting them in a pitch. SEO findings remain valid: search engines see the same thin shell. ' : '') + 'Mechanical checks only. A full XENON Studio review adds strategy, brand, design, and content judgment — this score is the floor, not the whole audit.'
