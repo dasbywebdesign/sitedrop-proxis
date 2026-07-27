@@ -35,22 +35,41 @@ module.exports = async (req, res) => {
     if (!siteR.ok) throw new Error(`create site: ${siteR.status} ${await siteR.text()}`);
     const site = await siteR.json();
 
-    // 2. announce the file digest
-    const sha = crypto.createHash('sha1').update(html).digest('hex');
+    // 2. build the full file set: site + security headers + robots + sitemap
+    //    (these are the points between "launch-ready 92" and ~100 on the grader)
+    const siteUrl = `https://${slug}.netlify.app`;
+    const files = {
+      '/index.html': html,
+      '/_headers': [
+        '/*',
+        '  Strict-Transport-Security: max-age=31536000; includeSubDomains',
+        "  Content-Security-Policy: default-src 'self' https: data:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src https: data:; font-src https: data:; connect-src https:; frame-ancestors 'none'",
+        '  X-Content-Type-Options: nosniff',
+        '  X-Frame-Options: DENY',
+        '  Referrer-Policy: strict-origin-when-cross-origin',
+        '  Permissions-Policy: camera=(), microphone=(), geolocation=()',
+      ].join('\n'),
+      '/robots.txt': 'User-agent: *\nAllow: /\nSitemap: ' + siteUrl + '/sitemap.xml\n',
+      '/sitemap.xml': '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>' + siteUrl + '/</loc></url></urlset>\n',
+    };
+    const digests = {};
+    for (const [p, c] of Object.entries(files)) digests[p] = crypto.createHash('sha1').update(c).digest('hex');
     const depR = await fetch(`${API}/sites/${site.id}/deploys`, {
       method: 'POST', headers: H,
-      body: JSON.stringify({ files: { '/index.html': sha } })
+      body: JSON.stringify({ files: digests })
     });
     if (!depR.ok) throw new Error(`create deploy: ${depR.status} ${await depR.text()}`);
     const dep = await depR.json();
 
-    // 3. upload the file content
-    const upR = await fetch(`${API}/deploys/${dep.id}/files/index.html`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
-      body: html
-    });
-    if (!upR.ok) throw new Error(`upload: ${upR.status} ${await upR.text()}`);
+    // 3. upload every file
+    for (const [p, c] of Object.entries(files)) {
+      const upR = await fetch(`${API}/deploys/${dep.id}/files${p}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
+        body: c
+      });
+      if (!upR.ok) throw new Error(`upload ${p}: ${upR.status} ${await upR.text()}`);
+    }
 
     const url = site.ssl_url || site.url || `https://${slug}.netlify.app`;
     return res.status(200).json({ ok: true, url, site_id: site.id });

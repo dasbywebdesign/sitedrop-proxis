@@ -210,7 +210,8 @@ module.exports = async (req, res) => {
   check(4, !cpy || Number(cpy) >= NOW - 1,
     `Copyright still says ${cpy} — the site looks out of date/abandoned to visitors`,
     'Update the footer year (and keep it auto-updating)');
-  check(3, !/(coming soon|under construction|lorem ipsum|placeholder text|your text here|example\.com)/i.test(low),
+  const lowNoAttrs = low.replace(/placeholder="[^"]*"/g, '').replace(/placeholder='[^']*'/g, '');
+  check(3, !/(coming soon|under construction|lorem ipsum|placeholder text|your text here|example\.com)/i.test(lowNoAttrs),
     'Placeholder text, "coming soon", or filler still live on the site',
     'Replace leftover placeholder/coming-soon content with real copy');
 

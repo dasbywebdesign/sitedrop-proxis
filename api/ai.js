@@ -193,6 +193,14 @@ module.exports = async (req, res) => {
         html = /<\/footer>/i.test(html) ? html.replace(/<footer/i, pv + '<footer') : (/<\/body>/i.test(html) ? html.replace(/<\/body>/i, pv + '</body>') : html + pv);
       }
 
+      // 4a0) SKIP LINK (accessibility, graded): inject if missing; anchor to <main> or first section.
+      if (!/skip[^"<>]{0,20}(content|nav)/i.test(html)) {
+        if (!/id="main"/i.test(html)) html = html.replace(/<main(\s|>)/i, '<main id="main"$1');
+        const target = /id="main"/i.test(html) ? '#main' : '#top';
+        if (target === '#top' && !/id="top"/i.test(html)) html = html.replace(/<body([^>]*)>/i, '<body$1 id="top">');
+        html = html.replace(/<body([^>]*)>/i, '<body$1><a href="' + target + '" style="position:absolute;left:-9999px;top:0;background:#fff;color:#000;padding:10px 16px;z-index:9999" onfocus="this.style.left=\'12px\'" onblur="this.style.left=\'-9999px\'">Skip to content</a>');
+      }
+
       // 4a) Lucide icons: the model often calls lucide.createIcons() in <head> (before the body
       //     exists, so nothing renders). Ensure a post-DOM call so correctly-authored icons appear.
       if (/lucide/i.test(html) && !/DOMContentLoaded[\s\S]{0,80}createIcons/i.test(html)) {
