@@ -182,8 +182,8 @@ module.exports = async (req, res) => {
                   lcp: (lr.audits && lr.audits['largest-contentful-paint'] && lr.audits['largest-contentful-paint'].displayValue) || '',
                   cls: (lr.audits && lr.audits['cumulative-layout-shift'] && lr.audits['cumulative-layout-shift'].displayValue) || '' };
         check(6, speed.score >= 50, `Slow on phones — Google performance score ${speed.score}/100 (LCP ${speed.lcp})`, 'Compress images, defer scripts, reduce page weight');
-      } else total -= 6;
-    } catch (e) { total -= 6; }
+      } else { total -= 6; var _pe=(pj&&pj.error&&pj.error.message)||'no lighthouse data'; global.__psiErr=_pe; }
+    } catch (e) { total -= 6; global.__psiErr=(e&&e.message)||'psi fetch failed'; }
   } else total -= 6;
 
   // link health (4) — sample internal links for 404s
@@ -251,7 +251,7 @@ module.exports = async (req, res) => {
   return res.status(200).json({
     url: final, draft, mechanical_score: pct, band, prospect: pct <= 70, themeColor: themeColor || undefined, history: history || undefined,
     findings: findings.sort((a, b) => b.points_lost - a.points_lost).map((f) => ({ ...f, meaning: meaningFor(f.issue) })),
-    jsRendered: jsShell || undefined, speed: speed || undefined,
+    jsRendered: jsShell || undefined, speed: speed || undefined, psiError: (!speed && global.__psiErr) || undefined,
     note: (jsShell ? '⚠ This site renders client-side (JS shell) — content findings (privacy/form/h1) may be false; verify in a browser before quoting them in a pitch. SEO findings remain valid: search engines see the same thin shell. ' : '') + 'Mechanical checks only. A full XENON Studio review adds strategy, brand, design, and content judgment — this score is the floor, not the whole audit.'
   });
 };
